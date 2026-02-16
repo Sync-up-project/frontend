@@ -1,10 +1,9 @@
+// src/app/providers.tsx
 "use client";
-import { ThemeProvider } from "next-themes";
+
+import React from "react";
+import { I18nProvider } from "@/lib/i18n";
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-      {children}
-    </ThemeProvider>
-  );
+  return <I18nProvider>{children}</I18nProvider>;
 }
