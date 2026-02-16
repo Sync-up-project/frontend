@@ -1,9 +1,13 @@
+import Hero from "./components/Hero";
+import Features from "./components/Features";
+import BottomIllustration from "./components/BottomIllustration";
+
 export default function Home() {
   return (
-    <main>
-      <h1>Sync-up</h1>
-      <p>Welcome to Sync-up Application</p>
-    </main>
-  )
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 via-white to-gray-100">
+      <Hero />
+      <Features />
+      <BottomIllustration />
+    </div>
+  );
 }
-
