@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
+import { apiGetCommunityPosts } from "@/lib/api";
 
 type Category = "free" | "question" | "share" | "review";
 type SortKey = "latest" | "popular" | "commented";
@@ -17,12 +18,37 @@ type Post = {
   contentJp?: string;
   tags: string[];
   createdAt: string; // ISO
-  authorName: string; // ✅ 고유값(닉네임)은 번역하지 않음
+  authorName: string;
   likes: number;
   commentsCount: number;
 };
 
-const LOCAL_POSTS_KEY = "syncup_local_community_posts";
+function pickArray(obj: any): any[] {
+  if (!obj) return [];
+  if (Array.isArray(obj)) return obj;
+  if (Array.isArray(obj.items)) return obj.items;
+  if (Array.isArray(obj.posts)) return obj.posts;
+  if (Array.isArray(obj.data)) return obj.data;
+  if (obj.result && Array.isArray(obj.result)) return obj.result;
+  if (obj.result && Array.isArray(obj.result.items)) return obj.result.items;
+  return [];
+}
+
+function normalizePost(raw: any): Post {
+  return {
+    id: String(raw?.id ?? raw?.postId ?? ""),
+    category: (raw?.category ?? "free") as Category,
+    title: String(raw?.title ?? ""),
+    titleJp: raw?.titleJp ?? raw?.titleJa ?? raw?.titleJP,
+    content: String(raw?.content ?? raw?.body ?? ""),
+    contentJp: raw?.contentJp ?? raw?.contentJa ?? raw?.contentJP,
+    tags: Array.isArray(raw?.tags) ? raw.tags : [],
+    createdAt: String(raw?.createdAt ?? raw?.created_at ?? new Date().toISOString()),
+    authorName: String(raw?.authorName ?? raw?.author?.nickname ?? raw?.author ?? ""),
+    likes: Number(raw?.likes ?? raw?.likeCount ?? 0),
+    commentsCount: Number(raw?.commentsCount ?? raw?.commentCount ?? 0),
+  };
+}
 
 const TABS: { key: Category; labelKr: string; labelJp: string }[] = [
   { key: "free", labelKr: "자유", labelJp: "フリー" },
@@ -36,19 +62,6 @@ const SORTS: { key: SortKey; labelKr: string; labelJp: string }[] = [
   { key: "popular", labelKr: "인기순", labelJp: "人気順" },
   { key: "commented", labelKr: "댓글순", labelJp: "コメント順" },
 ];
-
-function uid(prefix = "id") {
-  return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`;
-}
-
-function safeParseJson<T>(value: string | null, fallback: T): T {
-  if (!value) return fallback;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
-}
 
 function isCategory(v: string | null): v is Category {
   return v === "free" || v === "question" || v === "share" || v === "review";
@@ -106,6 +119,8 @@ export default function CommunityClient() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("latest");
   const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   function categoryLabel(category: Category) {
     switch (category) {
@@ -149,203 +164,28 @@ export default function CommunityClient() {
   }, [searchParams]);
 
   useEffect(() => {
-    const sync = () => {
-      const stored = safeParseJson<Post[]>(localStorage.getItem(LOCAL_POSTS_KEY), []);
-      setPosts(stored);
-    };
-
-    const seedIfEmpty = () => {
-      const current = safeParseJson<Post[]>(localStorage.getItem(LOCAL_POSTS_KEY), []);
-      if (current.length > 0) return;
-
-      const now = Date.now();
-      const mkTime = (minutesAgo: number) => new Date(now - 1000 * 60 * minutesAgo).toISOString();
-
-      const seeded: Post[] = [
-        // 자유 3
-        {
-          id: uid("c"),
-          category: "free",
-          title: "커뮤니티 첫 글입니다.",
-          titleJp: "コミュニティの最初の投稿です。",
-          content: "가벼운 이야기부터 시작해도 괜찮습니다.",
-          contentJp: "気軽な話題から始めても大丈夫です。",
-          tags: ["커뮤니티"],
-          createdAt: mkTime(10),
-          authorName: "테스트유저",
-          likes: 2,
-          commentsCount: 0,
-        },
-        {
-          id: uid("c"),
-          category: "free",
-          title: "팀 프로젝트 하면서 제일 힘든 점이 무엇인가요?",
-          titleJp: "チーム開発で一番大変だったことは何ですか？",
-          content: "일정, 역할, 커뮤니케이션 중에서 경험을 공유해 주세요.",
-          contentJp: "スケジュール、役割、コミュニケーションなど、経験を共有してください。",
-          tags: ["협업"],
-          createdAt: mkTime(80),
-          authorName: "테스트유저",
-          likes: 1,
-          commentsCount: 0,
-        },
-        {
-          id: uid("c"),
-          category: "free",
-          title: "오늘 작업 목표 공유합니다.",
-          titleJp: "今日の作業目標を共有します。",
-          content: "프로젝트 목록 UI 정리하고, 커뮤니티 글쓰기까지 연결하려고 합니다.",
-          contentJp: "プロジェクト一覧UIを整えて、コミュニティ投稿までつなげます。",
-          tags: ["회고"],
-          createdAt: mkTime(240),
-          authorName: "테스트유저",
-          likes: 0,
-          commentsCount: 0,
-        },
-
-        // QnA 3
-        {
-          id: uid("c"),
-          category: "question",
-          title: "Next.js에서 localStorage 기반 목록 갱신은 어떻게 처리하시나요?",
-          titleJp: "Next.jsでlocalStorageベースの一覧更新はどう処理していますか？",
-          content: "작성 후 목록으로 돌아오면 새 글이 즉시 보이게 만들고 싶습니다.",
-          contentJp: "投稿後に一覧へ戻ったとき、新しい投稿がすぐ見えるようにしたいです。",
-          tags: ["Next.js"],
-          createdAt: mkTime(35),
-          authorName: "테스트유저",
-          likes: 3,
-          commentsCount: 1,
-        },
-        {
-          id: uid("c"),
-          category: "question",
-          title: "Tailwind spacing 기준을 통일하는 팁이 있을까요?",
-          titleJp: "Tailwindのspacing基準を統一するコツはありますか？",
-          content: "컴포넌트마다 padding, gap이 달라져서 정리가 어렵습니다.",
-          contentJp: "コンポーネントごとにpaddingやgapが違って整理が難しいです。",
-          tags: ["Tailwind"],
-          createdAt: mkTime(300),
-          authorName: "테스트유저",
-          likes: 1,
-          commentsCount: 0,
-        },
-        {
-          id: uid("c"),
-          category: "question",
-          title: "필터 상태를 URL 쿼리로 동기화하는 편이 좋을까요?",
-          titleJp: "フィルター状態をURLクエリと同期したほうが良いですか？",
-          content: "공유/새로고침 관점에서 URL 동기화를 고민 중입니다.",
-          contentJp: "共有やリロードの観点でURL同期を検討中です。",
-          tags: ["UX"],
-          createdAt: mkTime(540),
-          authorName: "테스트유저",
-          likes: 0,
-          commentsCount: 0,
-        },
-
-        // 정보 공유 3
-        {
-          id: uid("c"),
-          category: "share",
-          title: "간단한 협업 체크리스트 공유합니다.",
-          titleJp: "簡単な協業チェックリストを共有します。",
-          content: "요구사항, API, 화면 흐름, 테스트 항목을 짧게라도 정리해 두면 편합니다.",
-          contentJp: "要件、API、画面フロー、テスト項目を短くても整理しておくと便利です。",
-          tags: ["문서화"],
-          createdAt: mkTime(60),
-          authorName: "테스트유저",
-          likes: 4,
-          commentsCount: 0,
-        },
-        {
-          id: uid("c"),
-          category: "share",
-          title: "PR 리뷰 시 최소 확인 항목을 정리해 봤습니다.",
-          titleJp: "PRレビューで最低限見る項目をまとめました。",
-          content: "동작 확인, 예외 케이스, 네이밍, 타입 정도만 고정해도 품질이 올라갑니다.",
-          contentJp: "動作確認、例外ケース、命名、型だけでも固定すると品質が上がります。",
-          tags: ["코드리뷰"],
-          createdAt: mkTime(420),
-          authorName: "테스트유저",
-          likes: 2,
-          commentsCount: 0,
-        },
-        {
-          id: uid("c"),
-          category: "share",
-          title: "프로젝트 소개 글 템플릿(짧은 버전)",
-          titleJp: "プロジェクト紹介テンプレ（短縮版）",
-          content: "목표, 핵심 기능, 역할, 기술 스택, 회고 포인트만 적어도 충분합니다.",
-          contentJp: "目標、主要機能、役割、技術、振り返りポイントだけでも十分です。",
-          tags: ["포트폴리오"],
-          createdAt: mkTime(700),
-          authorName: "테스트유저",
-          likes: 1,
-          commentsCount: 0,
-        },
-
-        // 후기 3
-        {
-          id: uid("c"),
-          category: "review",
-          title: "첫 팀 프로젝트 회고",
-          titleJp: "初めてのチーム開発の振り返り",
-          content: "기능 욕심을 줄이고 마감 기준을 먼저 정하니 훨씬 안정적이었습니다.",
-          contentJp: "欲張らず、締切基準を先に決めたら安定しました。",
-          tags: ["회고"],
-          createdAt: mkTime(90),
-          authorName: "테스트유저",
-          likes: 3,
-          commentsCount: 2,
-        },
-        {
-          id: uid("c"),
-          category: "review",
-          title: "UI 정리 후기",
-          titleJp: "UI整理の感想",
-          content: "spacing, radius 기준을 고정하고 컴포넌트를 맞추니 속도가 빨라졌습니다.",
-          contentJp: "spacingとradiusを固定して揃えると、作業が速くなりました。",
-          tags: ["UI/UX"],
-          createdAt: mkTime(520),
-          authorName: "테스트유저",
-          likes: 1,
-          commentsCount: 0,
-        },
-        {
-          id: uid("c"),
-          category: "review",
-          title: "탭 분리 적용 후기",
-          titleJp: "タブ分離を適用した感想",
-          content: "질문과 정보가 섞이지 않아서 탐색 피로도가 확실히 줄었습니다.",
-          contentJp: "質問と情報が混ざらず、探索の疲労が減りました。",
-          tags: ["IA"],
-          createdAt: mkTime(900),
-          authorName: "테스트유저",
-          likes: 0,
-          commentsCount: 0,
-        },
-      ];
-
-      localStorage.setItem(LOCAL_POSTS_KEY, JSON.stringify(seeded));
-    };
-
-    seedIfEmpty();
-    sync();
-
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === LOCAL_POSTS_KEY) sync();
-    };
-    const onChanged = () => sync();
-
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("local-community:changed", onChanged);
-
+    let mounted = true;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await apiGetCommunityPosts({
+          category: tab,
+          sort: sortKey,
+          q: query.trim() ? query.trim() : undefined,
+        });
+        const list = pickArray(res).map(normalizePost);
+        if (mounted) setPosts(list);
+      } catch (e: any) {
+        if (mounted) setError(e?.message ?? "Failed to load");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
     return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("local-community:changed", onChanged);
+      mounted = false;
     };
-  }, []);
+  }, [tab, sortKey, query]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -450,7 +290,16 @@ export default function CommunityClient() {
 
             {/* List */}
             <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
-              {filtered.length === 0 ? (
+              {loading ? (
+                <div className="p-8">
+                  <p className="text-sm text-gray-700">{tr("불러오는 중...", "読み込み中...")}</p>
+                </div>
+              ) : error ? (
+                <div className="p-8">
+                  <p className="text-sm text-red-600">{tr("불러오기에 실패했습니다.", "読み込みに失敗しました。")}</p>
+                  <p className="mt-2 text-xs text-gray-500 break-words">{error}</p>
+                </div>
+              ) : filtered.length === 0 ? (
                 <div className="p-8">
                   <p className="text-sm text-gray-700">
                     {tr("조건에 맞는 게시글이 없습니다.", "条件に合う投稿がありません。")}

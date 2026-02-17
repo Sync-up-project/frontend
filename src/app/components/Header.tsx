@@ -5,31 +5,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 
-import { clearAccessToken, getAccessToken, getCurrentUser, authedGet } from "@/lib/auth";
+import { clearAccessToken, getAccessToken, getCurrentUser } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
-
-type SimpleMe = {
-  id: number;
-  email: string;
-  nickname: string;
-  stacks?: string[];
-};
-
-type MyPageV2 = {
-  user: {
-    id: string | number;
-    nickname: string;
-    email: string;
-    role?: string;
-    primaryLanguage?: string;
-    createdAt?: string;
-  };
-  github?: {
-    username?: string;
-    url?: string;
-    isConnected?: boolean;
-  };
-};
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -49,7 +26,7 @@ export default function Header() {
       { href: "/notices", label: tr("공지사항", "お知らせ") },
       { href: "/mypage", label: tr("마이페이지", "マイページ") },
     ],
-    [tr],
+    [tr]
   );
 
   const isActive = (href: string) => {
@@ -57,7 +34,7 @@ export default function Header() {
     return pathname === href || pathname.startsWith(`${href}/`);
   };
 
-  async function loadMe() {
+  function loadMe() {
     const token = getAccessToken();
     if (!token) {
       setIsAuthed(false);
@@ -69,27 +46,6 @@ export default function Header() {
 
     const cached = getCurrentUser();
     setNickname(cached?.nickname ?? null);
-
-    const isProd = process.env.NODE_ENV === "production";
-
-    try {
-      const me = await authedGet<SimpleMe>("/users/mypage");
-      setNickname(me.nickname ?? cached?.nickname ?? null);
-      return;
-    } catch {
-      // ignore
-    }
-
-    try {
-      const mp = await authedGet<MyPageV2>("/mypage");
-      setNickname(mp?.user?.nickname ?? cached?.nickname ?? null);
-    } catch {
-      if (isProd) {
-        clearAccessToken();
-        setIsAuthed(false);
-        setNickname(null);
-      }
-    }
   }
 
   function onLogout() {
@@ -123,92 +79,67 @@ export default function Header() {
             <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-blue-500 rounded-lg flex items-center justify-center">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                 <circle cx="10" cy="10" r="8" stroke="white" strokeWidth="2" />
-                <path d="M10 6v8M6 10h8" stroke="white" strokeWidth="2" strokeLinecap="round" />
+                <path
+                  d="M10 6v8M6 10h8"
+                  stroke="white"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
               </svg>
             </div>
-            <span className="font-bold text-xl text-gray-900">Sync Up</span>
+            <span className="font-semibold text-gray-900">Sync Up</span>
           </Link>
 
           {/* Nav */}
-          <nav className="hidden md:flex flex-1 items-center justify-center gap-4">
-            {navItems.map((item) => {
-              const active = isActive(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "px-3 py-1.5 rounded-full text-sm font-medium transition-colors",
-                    active
-                      ? "text-gray-900 bg-gray-100"
-                      : "text-gray-600 hover:text-gray-900 hover:bg-gray-50",
-                  )}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
+          <nav className="flex items-center gap-6">
+            {navItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "text-sm font-medium transition-colors",
+                  isActive(item.href)
+                    ? "text-gray-900"
+                    : "text-gray-500 hover:text-gray-900"
+                )}
+              >
+                {item.label}
+              </Link>
+            ))}
           </nav>
 
-          {/* Right */}
-          <div className="flex items-center gap-4 shrink-0">
-            {/* Lang */}
-            <div className="hidden md:flex items-center gap-2 text-sm text-gray-700">
-              <Globe className="w-4 h-4" />
-              <button
-                type="button"
-                onClick={() => setLang("KR")}
-                className={cn(
-                  "px-2 py-1 rounded-full transition-colors",
-                  lang === "KR"
-                    ? "bg-gray-100 text-gray-900"
-                    : "text-gray-500 hover:text-gray-900 hover:bg-gray-50",
-                )}
-              >
-                KR
-              </button>
-              <span className="text-gray-300">|</span>
-              <button
-                type="button"
-                onClick={() => setLang("JP")}
-                className={cn(
-                  "px-2 py-1 rounded-full transition-colors",
-                  lang === "JP"
-                    ? "bg-gray-100 text-gray-900"
-                    : "text-gray-500 hover:text-gray-900 hover:bg-gray-50",
-                )}
-              >
-                JP
-              </button>
+          <div className="ml-auto flex items-center gap-3">
+            {/* Language Switch */}
+            <button
+              type="button"
+              className="inline-flex items-center justify-center w-9 h-9 rounded-lg hover:bg-gray-100 transition-colors"
+              onClick={() => setLang(lang === "KO" ? "JP" : "KO")}
+              aria-label="toggle language"
+              title={lang === "KO" ? "日本語" : "한국어"}
+            >
+              <Globe className="w-5 h-5 text-gray-600" />
+            </button>
+
+            <div className="flex items-center gap-2 text-sm text-gray-700">
+              <span className="px-2 py-1 rounded-md bg-gray-100">{lang}</span>
+              {nickname ? <span>{nickname}님</span> : null}
             </div>
 
-            {!isAuthed ? (
-              <>
-                <Link href="/login" className="text-gray-700 hover:text-gray-900 transition-colors">
-                  {tr("로그인", "ログイン")}
-                </Link>
-
-                <Link
-                  href="/signup"
-                  className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
-                >
-                  {tr("회원가입", "会員登録")}
-                </Link>
-              </>
+            {isAuthed ? (
+              <button
+                type="button"
+                onClick={onLogout}
+                className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors"
+              >
+                로그아웃
+              </button>
             ) : (
-              <>
-                <Link href="/mypage" className="text-gray-700 hover:text-gray-900 transition-colors">
-                  {nickname ? `${nickname}${tr("님", "さん")}` : tr("내 계정", "アカウント")}
-                </Link>
-
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
-                >
-                  {tr("로그아웃", "ログアウト")}
-                </button>
-              </>,
+              <Link
+                href="/login"
+                className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors"
+              >
+                로그인
+              </Link>
             )}
           </div>
         </div>
