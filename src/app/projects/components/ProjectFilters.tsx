@@ -1,8 +1,12 @@
 // src/app/projects/components/ProjectFilters.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useI18n } from "@/lib/i18n";
+import {
+  PROJECT_FILTER_STACKS,
+  PROJECT_FILTER_TOOLS,
+} from "@/lib/constants/projectFilterOptions";
 
 export type DevPosition =
   | "all"
@@ -35,9 +39,6 @@ const POSITIONS: DevPosition[] = [
   "data",
   "ai",
 ];
-
-const STACKS = ["React", "TypeScript", "Node.js", "WebSocket", "Python", "TensorFlow", "React Native"];
-const TOOLS = ["Notion", "Figma", "Miro", "GitHub", "Jira"];
 
 function Chevron({ open }: { open: boolean }) {
   return (
@@ -197,18 +198,25 @@ export default function ProjectFilters({ value, onChange }: Props) {
     }
   };
 
-  const positionLabel = useMemo(() => positionLabelOf(safe.position), [safe.position]);
+  const positionLabel = useMemo(
+    () => positionLabelOf(safe.position),
+    [safe.position]
+  );
 
   const stacksSummary = useMemo(() => {
     if (safe.stacks.length === 0) return tr("선택 없음", "未選択");
     if (safe.stacks.length === 1) return safe.stacks[0];
-    return `${safe.stacks[0]}${tr(" 외 ", " ほか ")}${safe.stacks.length - 1}${tr("개", "件")}`;
+    return `${safe.stacks[0]}${tr(" 외 ", " ほか ")}${
+      safe.stacks.length - 1
+    }${tr("개", "件")}`;
   }, [safe.stacks, tr]);
 
   const toolsSummary = useMemo(() => {
     if (safe.tools.length === 0) return tr("선택 없음", "未選択");
     if (safe.tools.length === 1) return safe.tools[0];
-    return `${safe.tools[0]}${tr(" 외 ", " ほか ")}${safe.tools.length - 1}${tr("개", "件")}`;
+    return `${safe.tools[0]}${tr(" 외 ", " ほか ")}${
+      safe.tools.length - 1
+    }${tr("개", "件")}`;
   }, [safe.tools, tr]);
 
   const chips = useMemo(() => {
@@ -226,7 +234,8 @@ export default function ProjectFilters({ value, onChange }: Props) {
       result.push({
         key: `stack:${s}`,
         label: s,
-        onRemove: () => onChange({ ...safe, stacks: safe.stacks.filter((x) => x !== s) }),
+        onRemove: () =>
+          onChange({ ...safe, stacks: safe.stacks.filter((x) => x !== s) }),
       });
     });
 
@@ -234,7 +243,8 @@ export default function ProjectFilters({ value, onChange }: Props) {
       result.push({
         key: `tool:${t}`,
         label: t,
-        onRemove: () => onChange({ ...safe, tools: safe.tools.filter((x) => x !== t) }),
+        onRemove: () =>
+          onChange({ ...safe, tools: safe.tools.filter((x) => x !== t) }),
       });
     });
 
@@ -251,12 +261,16 @@ export default function ProjectFilters({ value, onChange }: Props) {
   }
 
   function toggleStack(s: string) {
-    const next = safe.stacks.includes(s) ? safe.stacks.filter((x) => x !== s) : [...safe.stacks, s];
+    const next = safe.stacks.includes(s)
+      ? safe.stacks.filter((x) => x !== s)
+      : [...safe.stacks, s];
     onChange({ ...safe, stacks: next });
   }
 
   function toggleTool(t: string) {
-    const next = safe.tools.includes(t) ? safe.tools.filter((x) => x !== t) : [...safe.tools, t];
+    const next = safe.tools.includes(t)
+      ? safe.tools.filter((x) => x !== t)
+      : [...safe.tools, t];
     onChange({ ...safe, tools: next });
   }
 
@@ -264,7 +278,9 @@ export default function ProjectFilters({ value, onChange }: Props) {
     <div className="space-y-3">
       <aside className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-extrabold text-gray-900">{tr("필터", "フィルター")}</h2>
+          <h2 className="text-xl font-extrabold text-gray-900">
+            {tr("필터", "フィルター")}
+          </h2>
         </div>
 
         {chips.length > 0 ? (
@@ -305,7 +321,7 @@ export default function ProjectFilters({ value, onChange }: Props) {
             onToggle={() => setOpenStacks((v) => !v)}
           >
             <div className="flex flex-wrap gap-2">
-              {STACKS.map((s) => (
+              {PROJECT_FILTER_STACKS.map((s) => (
                 <TogglePill
                   key={s}
                   label={s}
@@ -323,7 +339,7 @@ export default function ProjectFilters({ value, onChange }: Props) {
             onToggle={() => setOpenTools((v) => !v)}
           >
             <div className="flex flex-wrap gap-2">
-              {TOOLS.map((t) => (
+              {PROJECT_FILTER_TOOLS.map((t) => (
                 <TogglePill
                   key={t}
                   label={t}

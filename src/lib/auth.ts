@@ -1,3 +1,5 @@
+// src/lib/auth.ts
+
 type LoginRequest = {
   email: string;
   password: string;
@@ -25,15 +27,14 @@ type SignupResponse = {
 
 const TOKEN_KEY = "syncup_access_token";
 const SESSION_USER_KEY = "syncup_session_user";
-const LOCAL_USERS_KEY = "syncup_local_users";
 
-type LocalUser = {
-  id: number;
-  email: string;
-  nickname: string;
-  password: string; // 시연용(로컬)만 사용
-};
+const DEV_AUTH_ENABLED = process.env.NEXT_PUBLIC_ENABLE_DEV_AUTH === "true";
 
+/**
+ * ✅ API Base URL
+ * - 기존 하드코딩 최소화: env 우선
+ * - 개발 기본값은 3001(현재 백엔드 기준)
+ */
 export function getApiBaseUrl(): string {
   return process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 }
@@ -105,74 +106,12 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promi
   return data as T;
 }
 
-function isDevEnv(): boolean {
-  return process.env.NODE_ENV !== "production";
-}
-
-function loadLocalUsers(): LocalUser[] {
-  if (typeof window === "undefined") return [];
-  const raw = window.localStorage.getItem(LOCAL_USERS_KEY);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as LocalUser[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveLocalUsers(users: LocalUser[]): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users));
-}
-
-function nextUserId(users: LocalUser[]): number {
-  return users.length ? Math.max(...users.map((u) => u.id)) + 1 : 1;
-}
-
-function makeDevToken(email: string): string {
-  // 단순 시연용 토큰 (서버 미연동 시에도 “로그인 상태”만 표현)
-  return `dev.${btoa(unescape(encodeURIComponent(email)))}.${Date.now()}`;
-}
-
-/**
- * 개발 시연용: 로컬 시연 계정을 보장해 둡니다.
- * - email: kwon@gmail.com
- * - password: 1234
- * - nickname: HB_Kwon
- */
-export function seedLocalDemoUser(): { id: number; email: string; password: string; nickname: string } {
-  const email = "kwon@gmail.com";
-  const password = "1234";
-  const nickname = "HB_Kwon";
-
-  if (typeof window === "undefined") {
-    return { id: 1, email, password, nickname };
-  }
-
-  const users = loadLocalUsers();
-  const exists = users.some((u) => u.email.toLowerCase() === email.toLowerCase());
-
-  if (!exists) {
-    const newUser: LocalUser = {
-      id: nextUserId(users),
-      email,
-      nickname,
-      password,
-    };
-    users.push(newUser);
-    saveLocalUsers(users);
-    return { id: newUser.id, email, password, nickname };
-  }
-
-  const found = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-  return { id: found?.id ?? 1, email, password, nickname: found?.nickname ?? nickname };
-}
-
 /**
  * 닉네임 중복 확인
- * - 백엔드 엔드포인트가 있으면 우선 확인합니다.
- * - 개발 환경에서는 백엔드가 없거나 실패할 때 로컬 시연 사용자 목록으로 폴백합니다.
+ * - ✅ 백엔드가 제공하는 경우에만 검증합니다.
+ * - 백엔드가 아직 미구현/오류라면:
+ *   - 개발 환경에서는 UX를 막지 않기 위해 true(사용 가능)로 처리
+ *   - 운영 환경에서는 서버 검증이 최종이므로 true 처리 (signup 시 서버가 최종 판단)
  */
 export async function checkNicknameAvailable(nickname: string): Promise<boolean> {
   const trimmed = nickname.trim();
@@ -180,122 +119,57 @@ export async function checkNicknameAvailable(nickname: string): Promise<boolean>
 
   const url = `${getApiBaseUrl()}/auth/check-nickname?nickname=${encodeURIComponent(trimmed)}`;
 
-  // 1) 백엔드 우선 시도
   try {
     const res = await fetch(url, { method: "GET" });
 
-    // 충돌(중복) 등으로 409를 쓰는 구현이 있을 수 있어 우선 처리합니다.
+    // 중복을 409로 내리는 서버도 있어서 우선 처리
     if (res.status === 409) return false;
 
     if (res.ok) {
       const contentType = res.headers.get("content-type") ?? "";
       if (contentType.includes("application/json")) {
         const data = (await res.json().catch(() => null)) as any;
-
         if (data && typeof data === "object") {
           if ("available" in data) return Boolean(data.available);
           if ("isAvailable" in data) return Boolean(data.isAvailable);
           if ("ok" in data) return Boolean(data.ok);
         }
       }
-
-      // 응답 형식이 불명확하더라도 200이면 “사용 가능”으로 간주합니다.
+      // 200이면 사용 가능으로 간주
       return true;
     }
 
-    // 백엔드가 엔드포인트를 제공하지만 비정상 응답인 경우
-    // - 개발 환경: 로컬 폴백
-    // - 운영 환경: UX 상 과도한 차단을 피하기 위해 true 처리(최종 검증은 signup에서 서버가 수행)
-    if (!isDevEnv()) return true;
+    // 엔드포인트는 있으나 비정상 응답
+    return true;
   } catch {
-    // 네트워크 오류 등: 아래 로컬 폴백으로 처리합니다.
-    if (!isDevEnv()) return true;
+    // 네트워크 오류 등: 개발/운영 모두 UX 막지 않기 위해 true
+    return true;
   }
-
-  // 2) 개발 환경: 로컬(Mock) 폴백
-  seedLocalDemoUser();
-
-  const users = loadLocalUsers();
-  const taken = users.some((u) => u.nickname.toLowerCase() === trimmed.toLowerCase());
-
-  return !taken;
 }
 
 export async function login(payload: LoginRequest): Promise<LoginResponse> {
   const url = `${getApiBaseUrl()}/auth/login`;
 
-  // 1) 백엔드 먼저 시도
-  try {
-    const res = await fetchJson<LoginResponse>(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+  const res = await fetchJson<LoginResponse>(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 
-    if (res?.accessToken) saveAccessToken(res.accessToken);
-    if (res?.user) saveCurrentUser(res.user);
+  if (res?.accessToken) saveAccessToken(res.accessToken);
+  if (res?.user) saveCurrentUser(res.user);
 
-    return res;
-  } catch (err) {
-    // 2) 개발 환경이면 로컬(Mock)로 폴백
-    if (!isDevEnv()) throw err;
-
-    // 데모 계정 보장
-    seedLocalDemoUser();
-
-    const users = loadLocalUsers();
-    const found = users.find((u) => u.email.toLowerCase() === payload.email.toLowerCase());
-
-    if (!found) throw new Error("이메일 또는 비밀번호가 올바르지 않습니다. (로컬 시연 로그인)");
-    if (found.password !== payload.password)
-      throw new Error("이메일 또는 비밀번호가 올바르지 않습니다. (로컬 시연 로그인)");
-
-    const res: LoginResponse = {
-      accessToken: makeDevToken(found.email),
-      user: { id: found.id, nickname: found.nickname },
-    };
-
-    saveAccessToken(res.accessToken);
-    if (res.user) saveCurrentUser(res.user);
-
-    return res;
-  }
+  return res;
 }
 
 export async function signup(payload: SignupRequest): Promise<SignupResponse> {
   const url = `${getApiBaseUrl()}/auth/signup`;
 
-  // 1) 백엔드 먼저 시도
-  try {
-    return await fetchJson<SignupResponse>(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-  } catch (err) {
-    // 2) 개발 환경이면 로컬(Mock)로 폴백
-    if (!isDevEnv()) throw err;
-
-    const users = loadLocalUsers();
-
-    const emailTaken = users.some((u) => u.email.toLowerCase() === payload.email.toLowerCase());
-    if (emailTaken) throw new Error("이미 사용 중인 이메일입니다. (로컬 시연 회원가입)");
-
-    const nickTaken = users.some((u) => u.nickname.toLowerCase() === payload.nickname.toLowerCase());
-    if (nickTaken) throw new Error("이미 사용 중인 닉네임입니다. (로컬 시연 회원가입)");
-
-    const newUser: LocalUser = {
-      id: nextUserId(users),
-      email: payload.email,
-      nickname: payload.nickname,
-      password: payload.password,
-    };
-
-    users.push(newUser);
-    saveLocalUsers(users);
-
-    return { id: newUser.id, email: newUser.email, nickname: newUser.nickname };
-  }
+  return await fetchJson<SignupResponse>(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function authedGet<T>(path: string): Promise<T> {
@@ -310,19 +184,33 @@ export async function authedGet<T>(path: string): Promise<T> {
   });
 }
 
-/** 개발 시연용: 강제로 로그인 상태 만들기 */
-export function devLogin(user?: { id: number; nickname: string; email?: string }): void {
-  // 데모 계정 보장
-  const demo = seedLocalDemoUser();
+function makeDevToken(email: string): string {
+  return `dev.${btoa(unescape(encodeURIComponent(email)))}.${Date.now()}`;
+}
 
-  const email = user?.email ?? demo.email;
+/**
+ * ✅ 개발 시연용: 강제로 로그인 상태 만들기
+ * - 하드코딩 제거: env로만 사용
+ * - NEXT_PUBLIC_ENABLE_DEV_AUTH=true 일 때만 동작
+ *
+ * 사용 env:
+ * - NEXT_PUBLIC_DEV_USER_EMAIL
+ * - NEXT_PUBLIC_DEV_USER_NICKNAME
+ * - NEXT_PUBLIC_DEV_USER_ID
+ */
+export function devLogin(): void {
+  if (!DEV_AUTH_ENABLED) {
+    throw new Error("DEV_AUTH가 비활성화되어 있습니다. (NEXT_PUBLIC_ENABLE_DEV_AUTH=true 필요)");
+  }
+
+  const email = process.env.NEXT_PUBLIC_DEV_USER_EMAIL ?? "dev@example.com";
+  const nickname = process.env.NEXT_PUBLIC_DEV_USER_NICKNAME ?? "dev";
+  const idRaw = process.env.NEXT_PUBLIC_DEV_USER_ID ?? "1";
+  const id = Number(idRaw) || 1;
+
   const token = makeDevToken(email);
-
   saveAccessToken(token);
-  saveCurrentUser({
-    id: user?.id ?? demo.id,
-    nickname: user?.nickname ?? demo.nickname,
-  });
+  saveCurrentUser({ id, nickname });
 }
 
 export async function sendEmailVerification(payload: { email: string }): Promise<{ message: string }> {

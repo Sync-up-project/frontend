@@ -1,3 +1,4 @@
+// src/app/dev-login/page.tsx
 "use client";
 
 import { useEffect } from "react";
@@ -8,8 +9,13 @@ export default function DevLoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    devLogin();
-    router.replace("/projects");
+    try {
+      devLogin();
+      router.replace("/projects");
+    } catch {
+      // DEV_AUTH가 꺼져 있으면 일반 로그인 페이지로 보냅니다.
+      router.replace("/login");
+    }
   }, [router]);
 
   return (

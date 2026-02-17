@@ -98,6 +98,60 @@ export type GetMyPageProjectsAppliedResponse = {
 };
 
 // =====================
+// ✅ api.ts 호환용 추가 타입들
+// - src/lib/api.ts에서 import 하는 타입 이름이 현재 파일에 없어서 TS 에러가 발생했음
+// - 백엔드 스펙이 확정되면 필드/타입을 실제 DTO에 맞게 조정하세요.
+// =====================
+
+/**
+ * 언어 수정(/mypage/languages)
+ * - 서버가 primaryLanguage만 받는 구조면 primaryLanguage만 사용
+ * - 서버가 여러 언어를 받는 구조면 languages도 사용 가능
+ */
+export type PatchMyPageLangRequest = {
+  primaryLanguage?: PrimaryLanguage;
+  languages?: PrimaryLanguage[];
+};
+
+/**
+ * 기술 스택 수정(/mypage/teches)
+ * - 백엔드가 techStackIds만 받는지, name 기반인지 불명확하므로 둘 다 허용
+ */
+export type PatchMyPageTechesRequest = {
+  techStackIds?: Array<string | number>;
+  techNames?: string[];
+  teches?: Array<{
+    techStackId?: string | number;
+    name?: string;
+    level?: string;
+    years?: number;
+  }>;
+};
+
+/**
+ * 포지션 수정(/mypage/positions)
+ */
+export type PatchMyPagePositionsRequest = {
+  positions: Array<MyPageRole | string>;
+};
+
+/**
+ * 프로젝트 관련 수정(/mypage/projects)
+ * - 관심/참여 프로젝트 id 목록 등 확정되기 전까지 넓게 허용
+ */
+export type PatchMyPageProjectsRequest = {
+  projectIds?: Array<string | number>;
+  projects?: Array<{
+    id: string | number;
+    title?: string;
+    roleInProject?: string;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+  }>;
+};
+
+// =====================
 // /users/mypage
 // =====================
 

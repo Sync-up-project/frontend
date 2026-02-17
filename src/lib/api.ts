@@ -19,232 +19,483 @@ import type {
 import type {
   GetMyPageResponse,
   PatchMyPageRequest,
-  PatchMyPageResponse,
+  PatchMyPageLangRequest,
+  PatchMyPageTechesRequest,
+  PatchMyPagePositionsRequest,
+  PatchMyPageProjectsRequest,
+  GetUsersMyPageResponse,
   GetMyPageGithubStatsResponse,
   GetMyPageProjectsSummaryResponse,
   GetMyPageProjectsCreatedResponse,
   GetMyPageProjectsAppliedResponse,
-  GetUsersMyPageResponse,
   PatchUsersMyPageRequest,
   PatchUsersMyPageResponse,
 } from "@/lib/types/mypage";
 
-type SendAuthEmailRequest = { email: string };
-type SendAuthEmailResponse = { message: string };
+/**
+ * ------------------------------------------------------------
+ * Base fetch helpers
+ * ------------------------------------------------------------
+ */
 
-type VerifyAuthEmailRequest = { email: string; code: string };
-type VerifyAuthEmailResponse = { verified: boolean };
+type HttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
-const BASE_URL = getApiBaseUrl?.() ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
-
-async function request<T>(
-  path: string,
-  options?: RequestInit,
-  auth: boolean = false
-): Promise<T> {
-  const token = auth ? getAccessToken() : null;
-
-  const url = `${BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
-
-  const hasBody = options?.body != null;
-
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      ...(hasBody ? { "Content-Type": "application/json" } : {}),
-      ...(auth && token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `Request failed (${res.status})`);
-  }
-
-  // 204 No Content 대응
-  if (res.status === 204) return {} as T;
-
-  // 빈 바디 대응
-  const text = await res.text().catch(() => "");
-  if (!text) return {} as T;
-
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    // JSON이 아닌 응답일 경우(드뭄) 방어적으로 빈 객체 반환
-    return {} as T;
-  }
-}
-
-/* ===============================
-   PROJECTS - GET
-================================ */
-
-export const apiGetProjectsList = () =>
-  request<ProjectListResponse>("/projects/list");
-
-export const apiGetProjectsRecommend = () =>
-  request<ProjectRecommendResponse>("/projects/recommend", undefined, true);
-
-export const apiGetProjectsWishlist = () =>
-  request<ProjectWishlistResponse>("/projects/wishlist", undefined, true);
-
-export const apiGetProjectsManagement = () =>
-  request<ProjectManagementResponse>("/projects/management", undefined, true);
-
-export const apiGetProjectDetail = (projectId: string) =>
-  request<ProjectDetailResponse>(`/projects/${projectId}`);
-
-export const apiGetProjectSimilar = (projectId: string) =>
-  request<ProjectSimilarResponse>(`/projects/${projectId}/similar`);
-
-/* ===============================
-   PROJECTS - PATCH
-================================ */
-
-export const apiPatchProjectStatus = (body: PatchProjectStatusRequest) =>
-  request<void>(
-    "/projects/status",
-    {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    },
-    true
-  );
-
-export const apiPatchProjectManagement = (body: PatchProjectManagementRequest) =>
-  request<void>(
-    "/projects/management",
-    {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    },
-    true
-  );
-
-/* ===============================
-   PROJECTS - DELETE
-================================ */
-
-export const apiDeleteProjectMember = (body: DeleteProjectMemberRequest) =>
-  request<void>(
-    "/projects/member",
-    {
-      method: "DELETE",
-      body: JSON.stringify(body),
-    },
-    true
-  );
-
-export const apiDeleteProjectManagement = (body: DeleteProjectManagementRequest) =>
-  request<void>(
-    "/projects/management",
-    {
-      method: "DELETE",
-      body: JSON.stringify(body),
-    },
-    true
-  );
-
-/* ===============================
-   PROJECTS - POST
-================================ */
-
-export const apiPostProjectMail = (body: PostProjectMailRequest) =>
-  request<void>(
-    "/projects/mail",
-    {
-      method: "POST",
-      body: JSON.stringify(body),
-    },
-    true
-  );
-
-/* ===============================
-   MYPAGE
-================================ */
-
-// GET /mypage
-export const apiGetMyPage = () =>
-  request<GetMyPageResponse>("/mypage", undefined, true);
-
-// PATCH /mypage
-export const apiPatchMyPage = (body: PatchMyPageRequest) =>
-  request<PatchMyPageResponse>(
-    "/mypage",
-    {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    },
-    true
-  );
-
-// GET /mypage/github/stats
-export const apiGetMyPageGithubStats = () =>
-  request<GetMyPageGithubStatsResponse>("/mypage/github/stats", undefined, true);
-
-// GET /mypage/projects/summary
-export const apiGetMyPageProjectsSummary = () =>
-  request<GetMyPageProjectsSummaryResponse>("/mypage/projects/summary", undefined, true);
-
-// GET /mypage/projects/created
-export const apiGetMyPageProjectsCreated = (params?: { page?: number; size?: number }) => {
-  const page = params?.page ?? 1;
-  const size = params?.size ?? 10;
-  return request<GetMyPageProjectsCreatedResponse>(
-    `/mypage/projects/created?page=${page}&size=${size}`,
-    undefined,
-    true
-  );
+type ApiOptions = {
+  method?: HttpMethod;
+  auth?: boolean;
+  headers?: Record<string, string>;
+  body?: any;
+  signal?: AbortSignal;
 };
 
-// GET /mypage/projects/applied
-export const apiGetMyPageProjectsApplied = () =>
-  request<GetMyPageProjectsAppliedResponse>("/mypage/projects/applied", undefined, true);
+function buildUrl(path: string) {
+  const base = getApiBaseUrl();
+  if (!base) return path; // fallback (dev)
+  if (path.startsWith("http")) return path;
+  const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${normalizedBase}${normalizedPath}`;
+}
 
-/* ===============================
-   USERS/MYPAGE
-================================ */
+async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
+  const url = buildUrl(path);
+  const { method = "GET", auth = false, headers = {}, body, signal } = options;
 
-// GET /users/mypage
-export const apiGetUsersMyPage = () =>
-  request<GetUsersMyPageResponse>("/users/mypage", undefined, true);
+  const finalHeaders: Record<string, string> = { ...headers };
 
-// PATCH /users/mypage
-export const apiPatchUsersMyPage = (body: PatchUsersMyPageRequest) =>
-  request<PatchUsersMyPageResponse>(
-    "/users/mypage",
-    {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    },
-    true
+  // JSON body default header
+  if (body !== undefined && !(body instanceof FormData)) {
+    finalHeaders["Content-Type"] =
+      finalHeaders["Content-Type"] ?? "application/json";
+  }
+
+  if (auth) {
+    const token = getAccessToken();
+    if (token) {
+      finalHeaders["Authorization"] = `Bearer ${token}`;
+    }
+  }
+
+  const res = await fetch(url, {
+    method,
+    headers: finalHeaders,
+    body:
+      body === undefined
+        ? undefined
+        : body instanceof FormData
+        ? body
+        : JSON.stringify(body),
+    signal,
+  });
+
+  const contentType = res.headers.get("content-type") || "";
+  const isJson = contentType.includes("application/json");
+
+  if (!res.ok) {
+    let message = `API Error (${res.status})`;
+    try {
+      const payload = isJson ? await res.json() : await res.text();
+      if (typeof payload === "string" && payload.trim()) message = payload;
+
+      if (
+        payload &&
+        typeof payload === "object" &&
+        ("message" in payload || "error" in payload)
+      ) {
+        message = (payload as any).message ?? (payload as any).error ?? message;
+      }
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+
+  if (res.status === 204) {
+    return undefined as unknown as T;
+  }
+
+  if (isJson) return (await res.json()) as T;
+  return (await res.text()) as unknown as T;
+}
+
+/**
+ * 다양한 백엔드 응답 구조에서 "배열"을 안전하게 꺼내오기 위한 방어 유틸.
+ */
+export function pickArray<T = any>(payload: any): T[] {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload as T[];
+
+  const candidates = [
+    "items",
+    "posts",
+    "notices",
+    "comments",
+    "content",
+    "data",
+    "result",
+    "results",
+    "list",
+    "project",
+    "projects",
+  ];
+
+  for (const key of candidates) {
+    const v = payload?.[key];
+    if (Array.isArray(v)) return v as T[];
+    if (v && typeof v === "object") {
+      for (const nestedKey of candidates) {
+        const nv = v?.[nestedKey];
+        if (Array.isArray(nv)) return nv as T[];
+      }
+    }
+  }
+
+  return [];
+}
+
+/**
+ * ------------------------------------------------------------
+ * Project APIs
+ * ------------------------------------------------------------
+ */
+
+/**
+ * 프로젝트 목록
+ * - 현재 콘솔에서 /projects 또는 /projects/list가 500이 나고 있어도
+ *   우선 경로는 백엔드에 맞춰 조정 가능하도록 유지합니다.
+ *
+ * ✅ 기본값은 /projects/list 로 두었습니다.
+ * (백엔드가 /projects에서 500이면 list로 우회하려는 목적)
+ */
+export async function apiGetProjectList(
+  query: string = ""
+): Promise<ProjectListResponse> {
+  const q = query ? `?${query}` : "";
+  return apiFetch<ProjectListResponse>(`/projects/list${q}`);
+}
+
+/**
+ * ✅ 별칭: 프로젝트 페이지가 이 이름을 쓰는 경우 대응
+ */
+export async function apiGetProjectsList(
+  query: string = ""
+): Promise<ProjectListResponse> {
+  return apiGetProjectList(query);
+}
+
+export async function apiGetProjectRecommend(): Promise<ProjectRecommendResponse> {
+  return apiFetch<ProjectRecommendResponse>(`/projects/recommend`, { auth: true });
+}
+
+/**
+ * ✅ 별칭 추가: ProjectsClient.tsx가 복수형을 import하는 경우 대응
+ */
+export async function apiGetProjectsRecommend(): Promise<ProjectRecommendResponse> {
+  return apiGetProjectRecommend();
+}
+
+export async function apiGetProjectWishlist(): Promise<ProjectWishlistResponse> {
+  return apiFetch<ProjectWishlistResponse>(`/projects/wishlist`, { auth: true });
+}
+
+/**
+ * ✅ 별칭 추가: ProjectsClient.tsx가 복수형을 import하는 경우 대응
+ */
+export async function apiGetProjectsWishlist(): Promise<ProjectWishlistResponse> {
+  return apiGetProjectWishlist();
+}
+
+export async function apiGetProjectManagement(): Promise<ProjectManagementResponse> {
+  return apiFetch<ProjectManagementResponse>(`/projects/management`, { auth: true });
+}
+
+export async function apiGetProjectDetail(
+  projectId: string
+): Promise<ProjectDetailResponse> {
+  return apiFetch<ProjectDetailResponse>(`/projects/${projectId}`);
+}
+
+export async function apiGetProjectSimilar(
+  projectId: string
+): Promise<ProjectSimilarResponse> {
+  return apiFetch<ProjectSimilarResponse>(`/projects/${projectId}/similar`);
+}
+
+export async function apiPatchProjectStatus(
+  projectId: string,
+  body: PatchProjectStatusRequest
+) {
+  return apiFetch(`/projects/${projectId}/status`, {
+    method: "PATCH",
+    auth: true,
+    body,
+  });
+}
+
+export async function apiPatchProjectManagement(
+  projectId: string,
+  body: PatchProjectManagementRequest
+) {
+  return apiFetch(`/projects/${projectId}/management`, {
+    method: "PATCH",
+    auth: true,
+    body,
+  });
+}
+
+export async function apiDeleteProjectMember(
+  projectId: string,
+  body: DeleteProjectMemberRequest
+) {
+  return apiFetch(`/projects/${projectId}/members`, {
+    method: "DELETE",
+    auth: true,
+    body,
+  });
+}
+
+export async function apiDeleteProjectManagement(
+  projectId: string,
+  body: DeleteProjectManagementRequest
+) {
+  return apiFetch(`/projects/${projectId}/management`, {
+    method: "DELETE",
+    auth: true,
+    body,
+  });
+}
+
+export async function apiPostProjectMail(
+  projectId: string,
+  body: PostProjectMailRequest
+) {
+  return apiFetch(`/projects/${projectId}/mail`, {
+    method: "POST",
+    auth: true,
+    body,
+  });
+}
+
+/**
+ * ------------------------------------------------------------
+ * MyPage APIs
+ * ------------------------------------------------------------
+ */
+
+export async function apiGetMyPage(): Promise<GetMyPageResponse> {
+  return apiFetch<GetMyPageResponse>(`/mypage`, { auth: true });
+}
+
+export async function apiPatchMyPage(body: PatchMyPageRequest) {
+  return apiFetch(`/mypage`, { method: "PATCH", auth: true, body });
+}
+
+export async function apiPatchMyPageLang(body: PatchMyPageLangRequest) {
+  return apiFetch(`/mypage/languages`, { method: "PATCH", auth: true, body });
+}
+
+export async function apiPatchMyPageTeches(body: PatchMyPageTechesRequest) {
+  return apiFetch(`/mypage/teches`, { method: "PATCH", auth: true, body });
+}
+
+export async function apiPatchMyPagePositions(body: PatchMyPagePositionsRequest) {
+  return apiFetch(`/mypage/positions`, { method: "PATCH", auth: true, body });
+}
+
+export async function apiPatchMyPageProjects(body: PatchMyPageProjectsRequest) {
+  return apiFetch(`/mypage/projects`, { method: "PATCH", auth: true, body });
+}
+
+/**
+ * ✅ mypage/page.tsx가 import 하는 추가 API들
+ * (백엔드 미구현이면 404는 날 수 있지만, import 에러는 사라집니다.)
+ */
+
+export async function apiGetUsersMyPage(): Promise<GetUsersMyPageResponse> {
+  return apiFetch<GetUsersMyPageResponse>(`/users/mypage`, { auth: true });
+}
+
+export async function apiPatchUsersMyPage(
+  body: PatchUsersMyPageRequest
+): Promise<PatchUsersMyPageResponse> {
+  return apiFetch<PatchUsersMyPageResponse>(`/users/mypage`, {
+    method: "PATCH",
+    auth: true,
+    body,
+  });
+}
+
+export async function apiGetMyPageGithubStats(): Promise<GetMyPageGithubStatsResponse> {
+  return apiFetch<GetMyPageGithubStatsResponse>(`/mypage/github/stats`, {
+    auth: true,
+  });
+}
+
+export async function apiGetMyPageProjectsSummary(): Promise<GetMyPageProjectsSummaryResponse> {
+  return apiFetch<GetMyPageProjectsSummaryResponse>(`/mypage/projects/summary`, {
+    auth: true,
+  });
+}
+
+export async function apiGetMyPageProjectsCreated(params?: {
+  page?: number;
+  size?: number;
+}): Promise<GetMyPageProjectsCreatedResponse> {
+  const usp = new URLSearchParams();
+  if (typeof params?.page === "number") usp.set("page", String(params.page));
+  if (typeof params?.size === "number") usp.set("size", String(params.size));
+  const qs = usp.toString();
+
+  return apiFetch<GetMyPageProjectsCreatedResponse>(
+    `/mypage/projects/created${qs ? `?${qs}` : ""}`,
+    { auth: true }
   );
+}
 
-/* ===============================
-   AUTH (email)
-================================ */
+export async function apiGetMyPageProjectsApplied(): Promise<GetMyPageProjectsAppliedResponse> {
+  return apiFetch<GetMyPageProjectsAppliedResponse>(`/mypage/projects/applied`, {
+    auth: true,
+  });
+}
 
-// POST /auth/email/send
-export const apiPostAuthEmailSend = (body: SendAuthEmailRequest) =>
-  request<SendAuthEmailResponse>(
-    "/auth/email/send",
-    {
-      method: "POST",
-      body: JSON.stringify(body),
-    },
-    false
-  );
+/**
+ * ------------------------------------------------------------
+ * Community / Notice APIs (추가)
+ * ------------------------------------------------------------
+ */
 
-// POST /auth/email/verify
-export const apiPostAuthEmailVerify = (body: VerifyAuthEmailRequest) =>
-  request<VerifyAuthEmailResponse>(
-    "/auth/email/verify",
-    {
-      method: "POST",
-      body: JSON.stringify(body),
-    },
-    false
-  );
+export type CommunityPostDto = {
+  id?: string | number;
+  postId?: string | number;
+  title?: string;
+  content?: string;
+  category?: string;
+  tags?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  author?: {
+    id?: string | number;
+    name?: string;
+    nickname?: string;
+    email?: string;
+  };
+  authorName?: string;
+  views?: number;
+  likes?: number;
+  commentsCount?: number;
+};
+
+export type CommunityCommentDto = {
+  id?: string | number;
+  commentId?: string | number;
+  content?: string;
+  createdAt?: string;
+  author?: {
+    id?: string | number;
+    name?: string;
+    nickname?: string;
+  };
+  authorName?: string;
+};
+
+export type NoticeDto = {
+  id?: string | number;
+  noticeId?: string | number;
+  title?: string;
+  content?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  pinned?: boolean;
+  author?: {
+    id?: string | number;
+    name?: string;
+    nickname?: string;
+  };
+  authorName?: string;
+};
+
+export type GetCommunityPostsParams = {
+  category?: string;
+  sort?: string;
+  q?: string;
+  page?: number;
+  size?: number;
+};
+
+export async function apiGetCommunityPosts(params: GetCommunityPostsParams = {}) {
+  const usp = new URLSearchParams();
+  if (params.category) usp.set("category", params.category);
+  if (params.sort) usp.set("sort", params.sort);
+  if (params.q) usp.set("q", params.q);
+  if (typeof params.page === "number") usp.set("page", String(params.page));
+  if (typeof params.size === "number") usp.set("size", String(params.size));
+
+  const qs = usp.toString();
+  return apiFetch<any>(`/community/posts${qs ? `?${qs}` : ""}`);
+}
+
+export async function apiGetCommunityPost(postId: string) {
+  return apiFetch<any>(`/community/posts/${postId}`);
+}
+
+export async function apiPostCommunityPost(body: {
+  category: string;
+  title: string;
+  content: string;
+  tags?: string[];
+  authorName?: string;
+}) {
+  return apiFetch<any>(`/community/posts`, {
+    method: "POST",
+    auth: true,
+    body,
+  });
+}
+
+export async function apiGetCommunityComments(postId: string) {
+  return apiFetch<any>(`/community/posts/${postId}/comments`);
+}
+
+export async function apiPostCommunityComment(
+  postId: string,
+  body: { content: string }
+) {
+  return apiFetch<any>(`/community/posts/${postId}/comments`, {
+    method: "POST",
+    auth: true,
+    body,
+  });
+}
+
+export type GetNoticesParams = {
+  q?: string;
+  page?: number;
+  size?: number;
+};
+
+export async function apiGetNotices(params: GetNoticesParams = {}) {
+  const usp = new URLSearchParams();
+  if (params.q) usp.set("q", params.q);
+  if (typeof params.page === "number") usp.set("page", String(params.page));
+  if (typeof params.size === "number") usp.set("size", String(params.size));
+
+  const qs = usp.toString();
+  return apiFetch<any>(`/notices${qs ? `?${qs}` : ""}`);
+}
+
+export async function apiGetNotice(noticeId: string) {
+  return apiFetch<any>(`/notices/${noticeId}`);
+}
+
+export async function apiPostNotice(body: {
+  title: string;
+  content: string;
+  authorName?: string;
+  pinned?: boolean;
+}) {
+  return apiFetch<any>(`/notices`, {
+    method: "POST",
+    auth: true,
+    body,
+  });
+}

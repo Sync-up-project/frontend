@@ -2,251 +2,232 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useI18n } from "@/lib/i18n";
-import { getAccessToken } from "@/lib/auth";
+import { apiGetMyPage, apiGetNotices } from "@/lib/api";
 
 type Notice = {
   id: string;
-  titleKr: string;
-  titleJp: string;
-  contentKr: string;
-  contentJp: string;
-  createdAt: string; // ISO
-  pinned?: boolean;
+  title: string;
+  titleJp?: string;
+  content: string;
+  contentJp?: string;
+  createdAt: string;
+  authorName: string;
+  pinned: boolean;
 };
 
-const LOCAL_NOTICES_KEY = "syncup_local_notices";
-const LOCAL_IS_ADMIN_KEY = "syncup_is_admin"; // ✅ 데모용: localStorage에 "true"면 어드민으로 간주
-
-function uid(prefix = "n") {
-  return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`;
+function pickArray(obj: any): any[] {
+  if (!obj) return [];
+  if (Array.isArray(obj)) return obj;
+  if (Array.isArray(obj.items)) return obj.items;
+  if (Array.isArray(obj.notices)) return obj.notices;
+  if (Array.isArray(obj.data)) return obj.data;
+  if (obj.result && Array.isArray(obj.result)) return obj.result;
+  if (obj.result && Array.isArray(obj.result.items)) return obj.result.items;
+  return [];
 }
 
-function safeParseJson<T>(value: string | null, fallback: T): T {
-  if (!value) return fallback;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
+function normalizeNotice(raw: any): Notice {
+  return {
+    id: String(raw?.id ?? raw?.noticeId ?? ""),
+    title: String(raw?.title ?? ""),
+    titleJp: raw?.titleJp ?? raw?.titleJa ?? raw?.titleJP,
+    content: String(raw?.content ?? raw?.body ?? ""),
+    contentJp: raw?.contentJp ?? raw?.contentJa ?? raw?.contentJP,
+    createdAt: String(raw?.createdAt ?? raw?.created_at ?? new Date().toISOString()),
+    authorName: String(raw?.authorName ?? raw?.author?.nickname ?? raw?.author ?? ""),
+    pinned: Boolean(raw?.pinned ?? raw?.isPinned ?? false),
+  };
 }
 
-function formatDate(iso: string, locale: "ko" | "ja") {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "-";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return locale === "ko" ? `${y}.${m}.${day}` : `${y}/${m}/${day}`;
+function formatRelativeTime(iso: string) {
+  const d = new Date(iso).getTime();
+  const now = Date.now();
+  const diff = Math.max(0, now - d);
+
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return "방금 전";
+  if (min < 60) return `${min}분 전`;
+
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}시간 전`;
+
+  const day = Math.floor(hr / 24);
+  return `${day}일 전`;
 }
 
+function excerpt(content: string) {
+  const t = content.replace(/\s+/g, " ").trim();
+  if (!t) return "내용이 없습니다.";
+  return t.length > 90 ? `${t.slice(0, 90)}…` : t;
+}
 export default function NoticesClient() {
-  const { tr, lang } = useI18n();
-
-  const [isAuthed, setIsAuthed] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-
   const [query, setQuery] = useState("");
   const [notices, setNotices] = useState<Notice[]>([]);
 
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [checkingRole, setCheckingRole] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // 관리자 판별: /mypage role 기반
   useEffect(() => {
-    // ✅ auth/admin 상태 동기화
-    const syncAuth = () => {
+    let mounted = true;
+    (async () => {
+      setCheckingRole(true);
       try {
-        setIsAuthed(Boolean(getAccessToken()));
+        const me = await apiGetMyPage();
+        const role =
+          (me as any)?.user?.role ??
+          (me as any)?.data?.user?.role ??
+          (me as any)?.role;
+
+        const roleStr = String(role ?? "").toUpperCase();
+
+        // 프로젝트에서 사용하는 ROLE에 맞춰 조정 가능
+        const ok =
+          roleStr === "ADMIN" ||
+          roleStr === "OWNER" ||
+          roleStr === "MANAGER" ||
+          roleStr.includes("ADMIN");
+
+        if (mounted) setIsAdmin(Boolean(ok));
       } catch {
-        setIsAuthed(false);
+        // 토큰 없거나 실패하면 admin 아님으로 처리
+        if (mounted) setIsAdmin(false);
+      } finally {
+        if (mounted) setCheckingRole(false);
       }
-    };
-
-    const syncAdmin = () => {
-      try {
-        setIsAdmin(localStorage.getItem(LOCAL_IS_ADMIN_KEY) === "true");
-      } catch {
-        setIsAdmin(false);
-      }
-    };
-
-    const seedIfEmpty = () => {
-      const current = safeParseJson<Notice[]>(localStorage.getItem(LOCAL_NOTICES_KEY), []);
-      if (current.length > 0) return;
-
-      const now = Date.now();
-      const mk = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
-
-      const seeded: Notice[] = [
-        {
-          id: uid(),
-          pinned: true,
-          titleKr: "서비스 이용 안내",
-          titleJp: "サービス利用のご案内",
-          contentKr: "현재는 프론트 단독 모드입니다. 일부 기능은 추후 백엔드 연동으로 확장됩니다.",
-          contentJp: "現在はフロント単独モードです。一部機能は後ほどバックエンド連携で拡張されます。",
-          createdAt: mk(60),
-        },
-        {
-          id: uid(),
-          titleKr: "커뮤니티 이용 규칙",
-          titleJp: "コミュニティ利用ルール",
-          contentKr: "서로 존중하는 표현을 사용해 주세요. 개인정보 공유는 지양해 주세요.",
-          contentJp: "互いに尊重した表現を使ってください。個人情報の共有は控えてください。",
-          createdAt: mk(420),
-        },
-        {
-          id: uid(),
-          titleKr: "프로젝트 모집 글 작성 팁",
-          titleJp: "募集投稿の書き方（ヒント）",
-          contentKr: "목표, 역할, 기간, 스택, 협업 도구를 짧고 명확하게 작성하면 매칭이 빨라집니다.",
-          contentJp: "目的、役割、期間、技術、協業ツールを短く明確に書くとマッチングが速くなります。",
-          createdAt: mk(980),
-        },
-        {
-          id: uid(),
-          titleKr: "점검 안내",
-          titleJp: "メンテナンスのお知らせ",
-          contentKr: "UI 개선 작업이 진행 중입니다. 화면이 일부 변경될 수 있습니다.",
-          contentJp: "UI改善作業を進めています。画面が一部変更される可能性があります。",
-          createdAt: mk(1440),
-        },
-      ];
-
-      localStorage.setItem(LOCAL_NOTICES_KEY, JSON.stringify(seeded));
-    };
-
-    const syncNotices = () => {
-      try {
-        const list = safeParseJson<Notice[]>(localStorage.getItem(LOCAL_NOTICES_KEY), []);
-        const sorted = [...list].sort((a, b) => {
-          // pinned 먼저
-          if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
-          return a.createdAt < b.createdAt ? 1 : -1;
-        });
-        setNotices(sorted);
-      } catch {
-        setNotices([]);
-      }
-    };
-
-    seedIfEmpty();
-    syncAuth();
-    syncAdmin();
-    syncNotices();
-
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === LOCAL_NOTICES_KEY) syncNotices();
-      if (e.key === LOCAL_IS_ADMIN_KEY) syncAdmin();
-      if (e.key === "syncup_access_token") syncAuth();
-    };
-
-    const onAuthChanged = () => syncAuth();
-
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("auth:changed", onAuthChanged);
+    })();
 
     return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("auth:changed", onAuthChanged);
+      mounted = false;
     };
   }, []);
+
+  // 공지 목록 로딩
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await apiGetNotices({ q: query.trim() ? query.trim() : undefined });
+        const list = pickArray(res).map(normalizeNotice);
+
+        // pinned 우선 + 최신순
+        list.sort((a, b) => {
+          if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+          return a.createdAt < b.createdAt ? 1 : -1;
+        });
+
+        if (mounted) setNotices(list);
+      } catch (e: any) {
+        if (mounted) setError(e?.message ?? "Failed to load notices");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [query]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return notices;
 
     return notices.filter((n) => {
-      const title = tr(n.titleKr, n.titleJp).toLowerCase();
-      const content = tr(n.contentKr, n.contentJp).toLowerCase();
-      return title.includes(q) || content.includes(q);
+      const hay = `${n.title} ${n.content} ${n.authorName}`.toLowerCase();
+      return hay.includes(q);
     });
-  }, [notices, query, tr]);
-
-  const locale = lang === "JP" ? "ja" : "ko";
+  }, [notices, query]);
 
   return (
     <div className="min-h-screen bg-white">
-      <div className="mx-auto w-full max-w-[1560px] px-6 lg:px-10 py-6">
+      <div className="mx-auto w-full max-w-[1200px] px-6 lg:px-10 py-6">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-lg font-semibold text-gray-900">{tr("공지사항", "お知らせ")}</h1>
+            <h1 className="text-lg font-semibold text-gray-900">공지사항</h1>
             <p className="mt-1 text-sm text-gray-600">
-              {tr(
-                "서비스 변경, 점검, 정책 관련 공지를 확인합니다.",
-                "サービス変更、メンテナンス、ポリシー関連のお知らせを確認します。",
-              )}
+              서비스 공지와 업데이트 내용을 확인할 수 있습니다.
             </p>
           </div>
 
-          {/* ✅ 어드민만 작성 가능(데모: localStorage syncup_is_admin="true") */}
-          {isAuthed && isAdmin ? (
-            <Link
-              href="/notices/new"
-              className="shrink-0 inline-flex items-center justify-center rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 transition"
-            >
-              {tr("+ 공지 작성", "+ お知らせ作成")}
-            </Link>
-          ) : (
-            <div className="shrink-0 text-xs text-gray-500">
-              {tr("공지 작성은 어드민만 가능합니다.", "お知らせの作成は管理者のみ可能です。")}
-            </div>
-          )}
-        </div>
-
-        <div className="mb-4 flex items-center gap-3">
-          <div className="flex-1">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={tr("검색: 제목, 내용", "検索: タイトル、内容")}
-              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-gray-200"
-            />
+          <div className="flex items-center gap-2">
+            {checkingRole ? (
+              <span className="text-xs text-gray-500">권한 확인 중...</span>
+            ) : isAdmin ? (
+              <Link
+                href="/notices/new"
+                className="inline-flex items-center justify-center rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 transition"
+              >
+                + 공지 작성
+              </Link>
+            ) : null}
           </div>
-          <button
-            type="button"
-            onClick={() => setQuery("")}
-            className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition"
-          >
-            {tr("초기화", "リセット")}
-          </button>
         </div>
 
+        {/* Search */}
+        <div className="mb-4">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="검색: 제목/본문/작성자"
+            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-gray-200"
+          />
+        </div>
+
+        {/* List */}
         <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
-          {filtered.length === 0 ? (
+          {loading ? (
             <div className="p-8">
-              <p className="text-sm text-gray-700">
-                {tr("표시할 공지가 없습니다.", "表示するお知らせがありません。")}
-              </p>
+              <p className="text-sm text-gray-700">불러오는 중...</p>
+            </div>
+          ) : error ? (
+            <div className="p-8">
+              <p className="text-sm text-red-600">공지사항을 불러오지 못했습니다.</p>
+              <p className="mt-2 text-xs text-gray-500 break-words">{error}</p>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="p-8">
+              <p className="text-sm text-gray-700">표시할 공지사항이 없습니다.</p>
               <p className="mt-2 text-xs text-gray-500">
-                {tr("검색어를 조정해 주세요.", "検索語を調整してください。")}
+                검색어를 변경해보세요.
               </p>
             </div>
           ) : (
             <ul className="divide-y divide-gray-100">
               {filtered.map((n) => (
                 <li key={n.id} className="hover:bg-gray-50 transition">
-                  <div className="p-5">
+                  <Link href={`/notices/${n.id}`} className="block p-5">
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           {n.pinned ? (
-                            <span className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
-                              {tr("고정", "固定")}
+                            <span className="inline-flex items-center rounded-md bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700">
+                              고정
                             </span>
                           ) : null}
-                          <span className="text-xs text-gray-500">{formatDate(n.createdAt, locale)}</span>
+                          <span className="text-xs text-gray-500">{formatRelativeTime(n.createdAt)}</span>
                         </div>
 
                         <p className="mt-2 text-base font-semibold text-gray-900 line-clamp-1">
-                          {tr(n.titleKr, n.titleJp)}
+                          {n.title}
                         </p>
-                        <p className="mt-1 text-sm text-gray-600">
-                          {tr(n.contentKr, n.contentJp)}
+                        <p className="mt-1 text-sm text-gray-600 line-clamp-1">
+                          {excerpt(n.content)}
                         </p>
+
+                        <div className="mt-3 text-xs text-gray-500">
+                          <span className="font-semibold text-gray-700">{n.authorName}</span>
+                        </div>
                       </div>
 
-                      {/* ✅ 공지사항은 댓글 기능 없음: 액션/카운트 표시 제거 */}
-                      <div className="shrink-0 text-xs text-gray-400">•</div>
+                      <div className="shrink-0 text-xs text-gray-400">→</div>
                     </div>
-                  </div>
+                  </Link>
                 </li>
               ))}
             </ul>
