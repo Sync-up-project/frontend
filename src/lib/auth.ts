@@ -5,12 +5,18 @@ type LoginRequest = {
   password: string;
 };
 
+type SessionUser = {
+  id: string; // ✅ Prisma/백엔드 ID는 보통 string
+  nickname: string;
+  email?: string;
+  role?: string;
+  profileImageUrl?: string | null;
+};
+
 type LoginResponse = {
   accessToken: string;
-  user?: {
-    id: number;
-    nickname: string;
-  };
+  expiresIn?: number;
+  user?: SessionUser;
 };
 
 type SignupRequest = {
@@ -20,9 +26,9 @@ type SignupRequest = {
 };
 
 type SignupResponse = {
-  id: number;
-  email: string;
-  nickname: string;
+  accessToken: string;
+  expiresIn?: number;
+  user?: SessionUser;
 };
 
 const TOKEN_KEY = "syncup_access_token";
@@ -30,13 +36,10 @@ const SESSION_USER_KEY = "syncup_session_user";
 
 const DEV_AUTH_ENABLED = process.env.NEXT_PUBLIC_ENABLE_DEV_AUTH === "true";
 
-/**
- * ✅ API Base URL
- * - 기존 하드코딩 최소화: env 우선
- * - 개발 기본값은 3001(현재 백엔드 기준)
- */
 export function getApiBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
+  const env = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const base = env ?? "http://localhost:3001";
+  return base;
 }
 
 function notifyAuthChanged(): void {
@@ -67,18 +70,18 @@ export function clearAccessToken(): void {
   notifyAuthChanged();
 }
 
-export function saveCurrentUser(user: { id: number; nickname: string }): void {
+export function saveCurrentUser(user: SessionUser): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(SESSION_USER_KEY, JSON.stringify(user));
   notifyAuthChanged();
 }
 
-export function getCurrentUser(): { id: number; nickname: string } | null {
+export function getCurrentUser(): SessionUser | null {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(SESSION_USER_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as { id: number; nickname: string };
+    return JSON.parse(raw) as SessionUser;
   } catch {
     return null;
   }
@@ -108,10 +111,8 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promi
 
 /**
  * 닉네임 중복 확인
- * - ✅ 백엔드가 제공하는 경우에만 검증합니다.
- * - 백엔드가 아직 미구현/오류라면:
- *   - 개발 환경에서는 UX를 막지 않기 위해 true(사용 가능)로 처리
- *   - 운영 환경에서는 서버 검증이 최종이므로 true 처리 (signup 시 서버가 최종 판단)
+ * - 백엔드가 제공하는 경우에만 검증합니다.
+ * - 백엔드가 미구현/오류면 UX를 막지 않기 위해 true(사용 가능)로 처리
  */
 export async function checkNicknameAvailable(nickname: string): Promise<boolean> {
   const trimmed = nickname.trim();
@@ -135,14 +136,11 @@ export async function checkNicknameAvailable(nickname: string): Promise<boolean>
           if ("ok" in data) return Boolean(data.ok);
         }
       }
-      // 200이면 사용 가능으로 간주
       return true;
     }
 
-    // 엔드포인트는 있으나 비정상 응답
     return true;
   } catch {
-    // 네트워크 오류 등: 개발/운영 모두 UX 막지 않기 위해 true
     return true;
   }
 }
@@ -154,6 +152,8 @@ export async function login(payload: LoginRequest): Promise<LoginResponse> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    // refresh 쿠키까지 쓰게 되면 필요할 수 있어요.
+    // credentials: "include",
   });
 
   if (res?.accessToken) saveAccessToken(res.accessToken);
@@ -165,11 +165,19 @@ export async function login(payload: LoginRequest): Promise<LoginResponse> {
 export async function signup(payload: SignupRequest): Promise<SignupResponse> {
   const url = `${getApiBaseUrl()}/auth/signup`;
 
-  return await fetchJson<SignupResponse>(url, {
+  const res = await fetchJson<SignupResponse>(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    // refresh 쿠키까지 쓰게 되면 필요할 수 있어요.
+    // credentials: "include",
   });
+
+  // ✅ 회원가입 직후에도 로그인 상태가 되도록 토큰/유저 저장
+  if (res?.accessToken) saveAccessToken(res.accessToken);
+  if (res?.user) saveCurrentUser(res.user);
+
+  return res;
 }
 
 export async function authedGet<T>(path: string): Promise<T> {
@@ -190,13 +198,7 @@ function makeDevToken(email: string): string {
 
 /**
  * ✅ 개발 시연용: 강제로 로그인 상태 만들기
- * - 하드코딩 제거: env로만 사용
  * - NEXT_PUBLIC_ENABLE_DEV_AUTH=true 일 때만 동작
- *
- * 사용 env:
- * - NEXT_PUBLIC_DEV_USER_EMAIL
- * - NEXT_PUBLIC_DEV_USER_NICKNAME
- * - NEXT_PUBLIC_DEV_USER_ID
  */
 export function devLogin(): void {
   if (!DEV_AUTH_ENABLED) {
@@ -205,12 +207,11 @@ export function devLogin(): void {
 
   const email = process.env.NEXT_PUBLIC_DEV_USER_EMAIL ?? "dev@example.com";
   const nickname = process.env.NEXT_PUBLIC_DEV_USER_NICKNAME ?? "dev";
-  const idRaw = process.env.NEXT_PUBLIC_DEV_USER_ID ?? "1";
-  const id = Number(idRaw) || 1;
+  const id = process.env.NEXT_PUBLIC_DEV_USER_ID ?? "dev-user";
 
   const token = makeDevToken(email);
   saveAccessToken(token);
-  saveCurrentUser({ id, nickname });
+  saveCurrentUser({ id, nickname, email });
 }
 
 export async function sendEmailVerification(payload: { email: string }): Promise<{ message: string }> {

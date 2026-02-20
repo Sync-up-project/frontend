@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { checkNicknameAvailable, signup, login } from "@/lib/auth";
-import { apiPostAuthEmailSend, apiPostAuthEmailVerify } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
 function isValidEmail(email: string): boolean {
@@ -28,25 +27,17 @@ export default function Signup() {
   const [password, setPassword] = useState<string>("");
   const [passwordConfirm, setPasswordConfirm] = useState<string>("");
 
-  // 이메일 인증
-  const [emailSending, setEmailSending] = useState(false);
-  const [emailSent, setEmailSent] = useState(false);
-  const [verifyCode, setVerifyCode] = useState("");
-  const [verifying, setVerifying] = useState(false);
-  const [emailVerified, setEmailVerified] = useState(false);
-  const [emailVerifyMsg, setEmailVerifyMsg] = useState<string>("");
-
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
 
+  // ✅ 이메일 인증 제거: emailVerified 조건 삭제
   const canSubmit = useMemo(() => {
     if (nicknameChecked !== "ok") return false;
     if (!isValidEmail(email)) return false;
-    if (!emailVerified) return false;
     if (password.length < 8) return false;
     if (password !== passwordConfirm) return false;
     return true;
-  }, [nicknameChecked, email, emailVerified, password, passwordConfirm]);
+  }, [nicknameChecked, email, password, passwordConfirm]);
 
   async function onCheckNickname() {
     setError("");
@@ -70,63 +61,6 @@ export default function Signup() {
       // 백엔드 미구현/오류 시에도 로컬 플로우 유지
       setNicknameChecked("ok");
       setNicknameMsg(tr("닉네임 확인을 건너뛰고 진행합니다.", "ニックネーム確認をスキップして進めます。"));
-    }
-  }
-
-  async function onSendEmailCode() {
-    setError("");
-    setEmailVerifyMsg("");
-
-    const trimmed = email.trim();
-    if (!isValidEmail(trimmed)) {
-      setEmailVerifyMsg(tr("이메일 형식을 확인해 주세요.", "メールアドレスの形式をご確認ください。"));
-      return;
-    }
-
-    setEmailSending(true);
-    try {
-      const res = await apiPostAuthEmailSend({ email: trimmed });
-      setEmailSent(true);
-      setEmailVerified(false);
-      setEmailVerifyMsg(res?.message ?? tr("인증 메일을 전송했습니다.", "認証メールを送信しました。"));
-    } catch (e: any) {
-      setEmailVerifyMsg(e?.message ?? tr("이메일 전송에 실패했습니다.", "メール送信に失敗しました。"));
-    } finally {
-      setEmailSending(false);
-    }
-  }
-
-  async function onVerifyEmailCode() {
-    setError("");
-    setEmailVerifyMsg("");
-
-    const trimmedEmail = email.trim();
-    const trimmedCode = verifyCode.trim();
-
-    if (!isValidEmail(trimmedEmail)) {
-      setEmailVerifyMsg(tr("이메일 형식을 확인해 주세요.", "メールアドレスの形式をご確認ください。"));
-      return;
-    }
-    if (!trimmedCode) {
-      setEmailVerifyMsg(tr("인증 코드를 입력해 주세요.", "認証コードを入力してください。"));
-      return;
-    }
-
-    setVerifying(true);
-    try {
-      const res = await apiPostAuthEmailVerify({ email: trimmedEmail, code: trimmedCode });
-      if (res?.verified) {
-        setEmailVerified(true);
-        setEmailVerifyMsg(tr("이메일 인증이 완료되었습니다.", "メール認証が完了しました。"));
-      } else {
-        setEmailVerified(false);
-        setEmailVerifyMsg(tr("인증에 실패했습니다.", "認証に失敗しました。"));
-      }
-    } catch (e: any) {
-      setEmailVerified(false);
-      setEmailVerifyMsg(e?.message ?? tr("인증에 실패했습니다.", "認証に失敗しました。"));
-    } finally {
-      setVerifying(false);
     }
   }
 
@@ -176,8 +110,8 @@ export default function Signup() {
 
             <p className="text-gray-700 leading-relaxed max-w-md">
               {tr(
-                "이메일 인증 후 간단하게 회원가입을 진행할 수 있습니다.",
-                "メール認証後、簡単に会員登録を進められます。"
+                "이메일 인증 없이 간단하게 회원가입을 진행합니다. (추후 이메일 인증을 다시 추가할 수 있습니다.)",
+                "メール認証なしで簡単に会員登録を進めます。（後でメール認証を追加できます。）"
               )}
             </p>
           </div>
@@ -215,7 +149,10 @@ export default function Signup() {
                   ))}
                 </div>
                 <p className="mt-2 text-xs text-gray-500">
-                  {tr("현재 회원가입 API에 role이 포함되어 있지 않아 저장되지 않습니다.", "現在の会員登録APIにroleが含まれていないため保存されません。")}
+                  {tr(
+                    "현재 회원가입 API에 role이 포함되어 있지 않아 저장되지 않습니다.",
+                    "現在の会員登録APIにroleが含まれていないため保存されません。"
+                  )}
                 </p>
               </div>
 
@@ -257,83 +194,27 @@ export default function Signup() {
                 ) : null}
               </div>
 
-              {/* Email + send */}
+              {/* Email (이메일 인증 제거: 입력만 받음) */}
               <div>
                 <label className="block text-sm font-medium text-gray-800 mb-2">
                   {tr("이메일", "メール")}
                 </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      setEmailSent(false);
-                      setEmailVerified(false);
-                      setVerifyCode("");
-                      setEmailVerifyMsg("");
-                    }}
-                    placeholder={tr("이메일을 입력해 주세요", "メールアドレスを入力してください")}
-                    className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-300"
-                  />
-                  <button
-                    type="button"
-                    onClick={onSendEmailCode}
-                    disabled={emailSending}
-                    className={[
-                      "px-4 py-3 rounded-lg border text-sm font-medium transition-colors",
-                      emailSending
-                        ? "border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed"
-                        : "border-gray-300 bg-white hover:bg-gray-50 text-gray-900",
-                    ].join(" ")}
-                  >
-                    {emailSending ? tr("전송중", "送信中") : tr("코드 전송", "コード送信")}
-                  </button>
-                </div>
-              </div>
-
-              {/* Verify code */}
-              <div>
-                <label className="block text-sm font-medium text-gray-800 mb-2">
-                  {tr("인증 코드", "認証コード")}
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={verifyCode}
-                    onChange={(e) => setVerifyCode(e.target.value)}
-                    placeholder={tr("코드를 입력해 주세요", "コードを入力してください")}
-                    className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-300"
-                    disabled={!emailSent}
-                  />
-                  <button
-                    type="button"
-                    onClick={onVerifyEmailCode}
-                    disabled={!emailSent || verifying}
-                    className={[
-                      "px-4 py-3 rounded-lg border text-sm font-medium transition-colors",
-                      !emailSent || verifying
-                        ? "border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed"
-                        : "border-gray-300 bg-white hover:bg-gray-50 text-gray-900",
-                    ].join(" ")}
-                  >
-                    {verifying ? tr("확인중", "確認中") : tr("인증 확인", "認証確認")}
-                  </button>
-                </div>
-
-                {emailVerifyMsg ? (
-                  <p className={["mt-2 text-sm", emailVerified ? "text-emerald-700" : "text-gray-700"].join(" ")}>
-                    {emailVerifyMsg}
-                  </p>
-                ) : null}
-
-                {emailVerified ? (
-                  <p className="mt-1 text-xs text-emerald-700">
-                    {tr("이메일 인증 완료", "メール認証完了")}
+                <input
+                  type="text"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                  }}
+                  placeholder={tr("이메일을 입력해 주세요", "メールアドレスを入力してください")}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-300"
+                />
+                {!email.trim() ? null : isValidEmail(email.trim()) ? (
+                  <p className="mt-2 text-sm text-emerald-700">
+                    {tr("사용 가능한 이메일 형식입니다.", "使用可能なメール形式です。")}
                   </p>
                 ) : (
-                  <p className="mt-1 text-xs text-gray-500">
-                    {tr("코드 전송 후 인증 확인을 진행해 주세요.", "コード送信後、認証確認を行ってください。")}
+                  <p className="mt-2 text-sm text-red-700">
+                    {tr("이메일 형식을 확인해 주세요.", "メールアドレスの形式をご確認ください。")}
                   </p>
                 )}
               </div>
