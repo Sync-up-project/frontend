@@ -2,14 +2,19 @@
 "use client";
 
 import Link from "next/link";
-import type { DevPosition } from "./ProjectFilters";
 import { useI18n } from "@/lib/i18n";
 
 export type ProjectItem = {
   id: string;
   title: string;
   description: string;
-  position: DevPosition;
+
+  /**
+   * ✅ 백엔드 변경에 덜 깨지게 string으로 받습니다.
+   * - 예: "frontend" / "backend" / "FRONTEND" / "백엔드" 등 무엇이 와도 표시 가능
+   */
+  position: string;
+
   tags: string[];
   currentCount: number;
   totalCount: number;
@@ -19,52 +24,39 @@ type Props = {
   projects: ProjectItem[];
 };
 
-function PositionBadge({ position }: { position: DevPosition }) {
+function PositionBadge({ position }: { position: string }) {
   const { tr } = useI18n();
   const base = "inline-flex items-center px-2 py-1 rounded-md text-xs font-semibold";
 
-  switch (position) {
-    case "frontend":
-      return (
-        <span className={`${base} bg-blue-100 text-blue-700`}>
-          {tr("프론트엔드", "フロントエンド")}
-        </span>
-      );
-    case "backend":
-      return (
-        <span className={`${base} bg-indigo-100 text-indigo-700`}>
-          {tr("백엔드", "バックエンド")}
-        </span>
-      );
-    case "fullstack":
-      return (
-        <span className={`${base} bg-slate-100 text-slate-700`}>
-          {tr("풀스택", "フルスタック")}
-        </span>
-      );
-    case "mobile":
-      return (
-        <span className={`${base} bg-purple-100 text-purple-700`}>
-          {tr("모바일", "モバイル")}
-        </span>
-      );
-    case "devops":
-      return <span className={`${base} bg-emerald-100 text-emerald-700`}>DevOps</span>;
-    case "data":
-      return (
-        <span className={`${base} bg-amber-100 text-amber-700`}>
-          {tr("데이터", "データ")}
-        </span>
-      );
-    case "ai":
-      return <span className={`${base} bg-rose-100 text-rose-700`}>AI/ML</span>;
-    default:
-      return (
-        <span className={`${base} bg-gray-100 text-gray-700`}>
-          {tr("전체", "全体")}
-        </span>
-      );
-  }
+  // ✅ “색상”만 프론트에서 알고 있는 값에 한해 매핑하고,
+  // 모르는 값은 회색으로 fallback
+  const key = (position ?? "").toLowerCase();
+
+  const className =
+    key === "frontend"
+      ? "bg-blue-100 text-blue-700"
+      : key === "backend"
+      ? "bg-indigo-100 text-indigo-700"
+      : key === "fullstack"
+      ? "bg-slate-100 text-slate-700"
+      : key === "mobile"
+      ? "bg-purple-100 text-purple-700"
+      : key === "devops"
+      ? "bg-emerald-100 text-emerald-700"
+      : key === "data"
+      ? "bg-amber-100 text-amber-700"
+      : key === "ai"
+      ? "bg-rose-100 text-rose-700"
+      : "bg-gray-100 text-gray-700";
+
+  // ✅ 텍스트는 “오는 값 그대로” 우선 표시
+  // 다만 빈 값이면 전체로 fallback
+  const label =
+    typeof position === "string" && position.trim().length > 0
+      ? position
+      : tr("전체", "全体");
+
+  return <span className={`${base} ${className}`}>{label}</span>;
 }
 
 export default function ProjectList({ projects }: Props) {

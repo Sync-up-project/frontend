@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import React, { useMemo } from "react";
 import { useI18n } from "@/lib/i18n";
 
 export type SidebarProject = {
@@ -30,9 +30,13 @@ function Card({
     <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm min-w-0">
       <div className="flex items-start justify-between gap-3 min-w-0">
         <div className="min-w-0">
-          <p className="text-sm font-extrabold text-gray-900 break-words">{title}</p>
+          <p className="text-sm font-extrabold text-gray-900 break-words">
+            {title}
+          </p>
           {subtitle ? (
-            <p className="mt-1 text-xs font-medium text-gray-500 break-words">{subtitle}</p>
+            <p className="mt-1 text-xs font-medium text-gray-500 break-words">
+              {subtitle}
+            </p>
           ) : null}
         </div>
         {right ? <div className="shrink-0">{right}</div> : null}
@@ -46,8 +50,12 @@ function MiniProject({ p }: { p: SidebarProject }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-4 min-w-0">
       <div className="flex items-center justify-between gap-3 min-w-0">
-        <p className="text-sm font-semibold text-gray-900 truncate min-w-0">{p.title}</p>
-        <p className="text-xs font-semibold text-gray-600 shrink-0">{p.membersText}</p>
+        <p className="text-sm font-semibold text-gray-900 truncate min-w-0">
+          {p.title}
+        </p>
+        <p className="text-xs font-semibold text-gray-600 shrink-0">
+          {p.membersText}
+        </p>
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
@@ -67,10 +75,14 @@ function MiniProject({ p }: { p: SidebarProject }) {
 export default function ProjectSidebar({ recommended, bookmarked }: Props) {
   const { tr } = useI18n();
 
+  const hasRecommended = recommended.length > 0;
+  const hasBookmarked = bookmarked.length > 0;
+
   const recommendedCountLabel = useMemo(
     () => `${recommended.length}${tr("개", "件")}`,
     [recommended.length, tr]
   );
+
   const bookmarkedCountLabel = useMemo(
     () => `${bookmarked.length}${tr("개", "件")}`,
     [bookmarked.length, tr]
@@ -78,18 +90,21 @@ export default function ProjectSidebar({ recommended, bookmarked }: Props) {
 
   return (
     <div className="space-y-5 min-w-0">
+      {/* ✅ 추천 카드 */}
       <Card
         title={tr(
-          "선택한 스택과 유사한 프로젝트를 우선 표시합니다.",
+          "추천 프로젝트",
           "選択したスタックに近いプロジェクトを優先表示します。"
         )}
         right={
-          <div className="text-xs font-semibold text-gray-700 whitespace-nowrap">
-            {tr("추천 프로젝트", "おすすめプロジェクト")} <span className="ml-1">{recommendedCountLabel}</span>
-          </div>
+          hasRecommended ? (
+            <div className="text-xs font-semibold text-gray-700 whitespace-nowrap">
+              {tr("추천 프로젝트", "おすすめプロジェクト")}{" "}
+              <span className="ml-1">{recommendedCountLabel}</span>
+            </div>
+          ) : null
         }
       >
-        {/* ✅ 장문이 좁은 폭에서 세로처럼 보이지 않도록 줄 수 제한 */}
         <p className="text-xs text-gray-500 leading-relaxed break-words line-clamp-6">
           {tr(
             "선택한 스택과 유사한 프로젝트를 우선적으로 보여드립니다.",
@@ -111,6 +126,7 @@ export default function ProjectSidebar({ recommended, bookmarked }: Props) {
         </div>
       </Card>
 
+      {/* ✅ 찜 카드 */}
       <Card
         title={tr("내가 찜한 프로젝트", "お気に入りのプロジェクト")}
         subtitle={tr(
@@ -118,9 +134,12 @@ export default function ProjectSidebar({ recommended, bookmarked }: Props) {
           "職種リストで素早く比較し、そのまま参加へ進めます。"
         )}
         right={
-          <div className="text-xs font-semibold text-gray-700 whitespace-nowrap">
-            {tr("찜한 프로젝트", "お気に入り")} <span className="ml-1">{bookmarkedCountLabel}</span>
-          </div>
+          hasBookmarked ? (
+            <div className="text-xs font-semibold text-gray-700 whitespace-nowrap">
+              {tr("찜한 프로젝트", "お気に入り")}{" "}
+              <span className="ml-1">{bookmarkedCountLabel}</span>
+            </div>
+          ) : null
         }
       >
         <button

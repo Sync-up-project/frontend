@@ -46,6 +46,13 @@ type ApiOptions = {
   headers?: Record<string, string>;
   body?: any;
   signal?: AbortSignal;
+
+  /**
+   * ✅ 백엔드 미구현 API에 대한 방어 처리용
+   * - true면 404일 때 throw 하지 않고 undefined를 반환합니다.
+   * - 호출 측에서 undefined 처리(빈 배열/빈 객체로 대체)하면 콘솔 에러가 사라집니다.
+   */
+  allow404?: boolean;
 };
 
 function buildUrl(path: string) {
@@ -59,7 +66,14 @@ function buildUrl(path: string) {
 
 async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const url = buildUrl(path);
-  const { method = "GET", auth = false, headers = {}, body, signal } = options;
+  const {
+    method = "GET",
+    auth = false,
+    headers = {},
+    body,
+    signal,
+    allow404 = false,
+  } = options;
 
   const finalHeaders: Record<string, string> = { ...headers };
 
@@ -87,6 +101,11 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
         : JSON.stringify(body),
     signal,
   });
+
+  // ✅ 미구현 API는 404를 허용해서 조용히 처리
+  if (allow404 && res.status === 404) {
+    return undefined as unknown as T;
+  }
 
   const contentType = res.headers.get("content-type") || "";
   const isJson = contentType.includes("application/json");
@@ -161,11 +180,7 @@ export function pickArray<T = any>(payload: any): T[] {
 
 /**
  * 프로젝트 목록
- * - 현재 콘솔에서 /projects 또는 /projects/list가 500이 나고 있어도
- *   우선 경로는 백엔드에 맞춰 조정 가능하도록 유지합니다.
- *
- * ✅ 기본값은 /projects/list 로 두었습니다.
- * (백엔드가 /projects에서 500이면 list로 우회하려는 목적)
+ * ✅ 기본값은 /projects/list
  */
 export async function apiGetProjectList(
   query: string = ""
@@ -183,8 +198,25 @@ export async function apiGetProjectsList(
   return apiGetProjectList(query);
 }
 
+/**
+ * 추천 프로젝트
+ * - 백엔드 미구현이면 404가 나므로 allow404 처리 후 빈 형태로 반환
+ */
 export async function apiGetProjectRecommend(): Promise<ProjectRecommendResponse> {
-  return apiFetch<ProjectRecommendResponse>(`/projects/recommend`, { auth: true });
+  const res = await apiFetch<ProjectRecommendResponse>(`/projects/recommend`, {
+    auth: true,
+    allow404: true,
+  });
+
+  // ✅ 404(미구현)면 undefined가 오므로, 프론트가 기대하는 형태로 빈값 리턴
+  if (!res) {
+    return {
+      project: [],
+      techStacks: [],
+    } as any;
+  }
+
+  return res;
 }
 
 /**
@@ -194,8 +226,24 @@ export async function apiGetProjectsRecommend(): Promise<ProjectRecommendRespons
   return apiGetProjectRecommend();
 }
 
+/**
+ * 찜 목록
+ * - 백엔드 미구현이면 404가 나므로 allow404 처리 후 빈 형태로 반환
+ */
 export async function apiGetProjectWishlist(): Promise<ProjectWishlistResponse> {
-  return apiFetch<ProjectWishlistResponse>(`/projects/wishlist`, { auth: true });
+  const res = await apiFetch<ProjectWishlistResponse>(`/projects/wishlist`, {
+    auth: true,
+    allow404: true,
+  });
+
+  if (!res) {
+    return {
+      project: [],
+      techStacks: [],
+    } as any;
+  }
+
+  return res;
 }
 
 /**
@@ -206,7 +254,9 @@ export async function apiGetProjectsWishlist(): Promise<ProjectWishlistResponse>
 }
 
 export async function apiGetProjectManagement(): Promise<ProjectManagementResponse> {
-  return apiFetch<ProjectManagementResponse>(`/projects/management`, { auth: true });
+  return apiFetch<ProjectManagementResponse>(`/projects/management`, {
+    auth: true,
+  });
 }
 
 export async function apiGetProjectDetail(

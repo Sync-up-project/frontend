@@ -75,7 +75,7 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-6 h-20">
         <div className="flex items-center gap-6 h-20">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 shrink-0">
+          <Link href="/" prefetch={false} className="flex items-center gap-2 shrink-0">
             <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-blue-500 rounded-lg flex items-center justify-center">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                 <circle cx="10" cy="10" r="8" stroke="white" strokeWidth="2" />
@@ -96,6 +96,7 @@ export default function Header() {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false} // ✅ 자동 prefetch로 인한 불필요한 API 호출(404 폭발) 방지
                 className={cn(
                   "text-sm font-medium transition-colors",
                   isActive(item.href)
@@ -136,6 +137,7 @@ export default function Header() {
             ) : (
               <Link
                 href="/login"
+                prefetch={false}
                 className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors"
               >
                 로그인
