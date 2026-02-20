@@ -1,32 +1,81 @@
-// src/app/api/projects/route.ts
-
 import { NextResponse } from "next/server";
 
 function getBackendBase() {
-  // ✅ 서버 내부 프록시 호출 우선
-  // - INTERNAL_BACKEND_URL: docker/서버 내부에서 backend 서비스로 호출할 때
-  // - NEXT_PUBLIC_API_BASE_URL: 로컬 개발에서 직접 호출할 때
   return (
     process.env.INTERNAL_BACKEND_URL ??
     process.env.NEXT_PUBLIC_API_BASE_URL ??
-    "http://localhost:3001"
+    "http://backend:3000"
   );
 }
 
-export async function GET(req: Request) {
-  const backend = getBackendBase();
-  const url = new URL(req.url);
-
-  const limit = url.searchParams.get("limit") ?? "20";
-
-  const res = await fetch(`${backend}/projects?limit=${encodeURIComponent(limit)}`, {
-    cache: "no-store",
-  });
-
-  const text = await res.text();
+export async function GET(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
   try {
-    return NextResponse.json(JSON.parse(text), { status: res.status });
-  } catch {
-    return new NextResponse(text, { status: res.status });
+    const backend = getBackendBase();
+    const url = `${backend}/projects/${params.id}`;
+
+    const res = await fetch(url, { cache: "no-store" });
+    const text = await res.text();
+
+    // 백엔드의 content-type을 최대한 유지
+    const contentType = res.headers.get("content-type") ?? "application/json";
+
+    // 상태코드/바디 그대로 전달
+    return new NextResponse(text, {
+      status: res.status,
+      headers: { "content-type": contentType },
+    });
+  } catch (e) {
+    // 프록시 자체가 실패한 경우(주소 문제 등)
+    return NextResponse.json(
+      {
+        error: "Proxy failed",
+        detail: String(e),
+        backendBase: getBackendBase(),
+        hint:
+          "docker 환경에서는 INTERNAL_BACKEND_URL=http://backend:3000 설정이 필요합니다.",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const backend = getBackendBase();
+    const url = `${backend}/projects/${params.id}`;
+
+    // 쿠키 기반 인증이 붙을 수 있으니 쿠키 전달(없으면 빈 값)
+    const cookie = req.headers.get("cookie") ?? "";
+
+    const res = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        ...(cookie ? { cookie } : {}),
+      },
+      cache: "no-store",
+    });
+
+    const text = await res.text();
+    const contentType = res.headers.get("content-type") ?? "application/json";
+
+    return new NextResponse(text, {
+      status: res.status,
+      headers: { "content-type": contentType },
+    });
+  } catch (e) {
+    return NextResponse.json(
+      {
+        error: "Proxy failed",
+        detail: String(e),
+        backendBase: getBackendBase(),
+      },
+      { status: 500 }
+    );
   }
 }

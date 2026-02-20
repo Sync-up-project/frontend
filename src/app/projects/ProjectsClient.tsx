@@ -27,7 +27,6 @@ import type {
 function normalizeTechName(name: string) {
   const n = (name ?? "").trim();
   if (!n) return n;
-  // 노션 예시에서 React / NestJS / Node.js 등이 섞여 있으니, 일단 원본 존중
   return n;
 }
 
@@ -172,7 +171,6 @@ export default function ProjectsClient() {
         );
       } catch {
         if (!mounted) return;
-        // 사이드바 실패는 치명적이지 않으니 비우고 진행
         setRecommended([]);
         setBookmarked([]);
       } finally {

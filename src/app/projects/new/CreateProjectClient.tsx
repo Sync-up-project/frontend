@@ -3,8 +3,10 @@
 
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { useI18n } from "@/lib/i18n";
+import { getCurrentUser } from "@/lib/auth";
 
 type StackChip = { id: string; label: string };
 type ToolChip = { id: string; label: string };
@@ -75,7 +77,60 @@ function SectionCard({ title, children }: { title: string; children: React.React
   );
 }
 
+function mapStacksToLabels(ids: string[]) {
+  const map = new Map(STACKS.map((s) => [s.id, s.label]));
+  return ids.map((id) => map.get(id) ?? id).filter(Boolean);
+}
+
+/**
+ * 기존 리스트 화면의 필터 매핑이 DEV/DESIGN 기반이라 우선 그 흐름을 유지합니다.
+ * - backend -> DEV
+ * - frontend -> DESIGN
+ * - fullstack -> DEV + DESIGN
+ * - 나머지는 일단 대문자 문자열로 전달(백엔드가 string으로 받는 구조라면 문제 없음)
+ */
+function mapPositionNeeds(position: Position) {
+  if (position === "backend") return [{ position: "DEV", headcount: 1 }];
+  if (position === "frontend") return [{ position: "DESIGN", headcount: 1 }];
+  if (position === "fullstack")
+    return [
+      { position: "DEV", headcount: 1 },
+      { position: "DESIGN", headcount: 1 },
+    ];
+  if (position === "mobile") return [{ position: "MOBILE", headcount: 1 }];
+  if (position === "devops") return [{ position: "DEVOPS", headcount: 1 }];
+  if (position === "data") return [{ position: "DATA", headcount: 1 }];
+  return [{ position: "AI", headcount: 1 }];
+}
+
+async function postCreateProject(payload: any) {
+  const res = await fetch("/api/projects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const text = await res.text();
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+
+  if (!res.ok) {
+    const msg =
+      (data && typeof data === "object" && (data.message || data.error)) ||
+      (typeof data === "string" && data) ||
+      `프로젝트 생성 실패 (HTTP ${res.status})`;
+    throw new Error(String(msg));
+  }
+
+  return data;
+}
+
 export default function CreateProjectClient() {
+  const router = useRouter();
   const { tr, lang } = useI18n();
 
   const [title, setTitle] = useState("");
@@ -130,23 +185,43 @@ export default function CreateProjectClient() {
         return;
       }
 
-      // 더미 단계: 실제 API 연결 전까지는 콘솔 로그로만 확인
-      // eslint-disable-next-line no-console
-      console.log({
-        title,
-        position,
-        count,
-        dueDate,
-        allowComment,
-        allowShare,
-        allowScrap,
-        stacks: selectedStacks,
-        tools: selectedTools,
-        body,
-      });
+      const me = getCurrentUser();
+      if (!me?.id) {
+        setErrorMsg(tr("로그인이 필요합니다.", "ログインが必要です。"));
+        return;
+      }
 
-      // UX: 제출 후 projects로 이동
-      window.location.href = "/projects";
+      const techStacks = mapStacksToLabels(selectedStacks);
+
+      const summaryOriginal = body.trim()
+        ? body.trim().split("\n")[0].slice(0, 120)
+        : "";
+
+      // ✅ 백엔드 POST /projects에 맞춘 payload
+      const payload = {
+        ownerId: String(me.id), // (인증 붙이면 서버에서 userId 추출하도록 변경)
+        originalLang: lang === "JP" ? "JP" : "KO",
+        titleOriginal: title.trim(),
+        summaryOriginal,
+        descriptionOriginal: body,
+        mode: "ONLINE",
+        difficulty: "MEDIUM",
+        capacity: Number.isFinite(count) ? Number(count) : 1,
+        endDate: dueDate ? new Date(dueDate).toISOString() : null,
+        deadline: dueDate ? new Date(dueDate).toISOString() : null,
+        techStacks,
+        positionNeeds: mapPositionNeeds(position),
+        // 아래 옵션들은 현재 백엔드 스키마에 없을 가능성이 높아서 일단 전송하지 않습니다.
+        // allowComment, allowShare, allowScrap, tools
+      };
+
+      await postCreateProject(payload);
+
+      // ✅ 생성 성공 → 목록으로 이동
+      router.push("/projects");
+      router.refresh();
+    } catch (e: any) {
+      setErrorMsg(e?.message ?? tr("생성에 실패했습니다.", "作成に失敗しました。"));
     } finally {
       submittingRef.current = false;
     }
@@ -155,7 +230,6 @@ export default function CreateProjectClient() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-8 py-10">
-        {/* ✅ 여기 간격 조정: mb-5 → mb-8 (요청사항) */}
         <div className="mb-8 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-gray-900">{tr("프로젝트 글쓰기", "プロジェクト投稿")}</h1>
@@ -201,172 +275,142 @@ export default function CreateProjectClient() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder={placeholderTitle}
-                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300"
               />
             </SectionCard>
 
-            <SectionCard title={tr("모집유형 / 인원 / 기한 (필수)", "募集タイプ／人数／期限（必須）")}>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div>
-                  <p className="text-xs font-semibold text-gray-700 mb-2">{tr("모집유형", "募集タイプ")}</p>
-                  <button
-                    type="button"
-                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-left text-sm font-semibold text-gray-900"
-                  >
-                    {positionLabel}
-                  </button>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {POSITION_OPTIONS.map((o) => (
-                      <ChipButton key={o.value} active={position === o.value} onClick={() => setPosition(o.value)}>
-                        {lang === "JP" ? o.labelJp : o.labelKr}
-                      </ChipButton>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold text-gray-700 mb-2">{tr("모집인원", "募集人数")}</p>
-                  <input
-                    value={Number.isFinite(count) ? String(count) : ""}
-                    onChange={(e) => setCount(Number(e.target.value || 0))}
-                    placeholder={placeholderCount}
-                    inputMode="numeric"
-                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
-                  />
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold text-gray-700 mb-2">{tr("기한", "期限")}</p>
-                  <input
-                    type="date"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
-                  />
-                </div>
-              </div>
-
-              {/* 구분선(요청하셨던 형태가 필요하면 여기서 유지/확장 가능) */}
-              <div className="my-6 h-px w-full bg-gray-200" />
-
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                <div>
-                  <p className="text-xs font-semibold text-gray-700 mb-2">{tr("개발언어/스택 (필수)", "開発言語／スタック（必須）")}</p>
-                  <p className="text-xs text-gray-500 mb-3">
-                    {tr("필요한 기술을 선택해 주세요(복수 선택).", "必要な技術を選択してください（複数選択可）。")}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {STACKS.map((s) => {
-                      const active = selectedStacks.includes(s.id);
-                      return (
-                        <ChipButton
-                          key={s.id}
-                          active={active}
-                          onClick={() => setSelectedStacks((prev) => toggleId(prev, s.id))}
-                        >
-                          {s.label}
-                        </ChipButton>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold text-gray-700 mb-2">{tr("툴/협업도구 (필수)", "ツール／協業ツール（必須）")}</p>
-                  <p className="text-xs text-gray-500 mb-3">
-                    {tr("협업에 사용할 도구를 선택해 주세요(복수 선택).", "協業で使うツールを選択してください（複数選択可）。")}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {TOOLS.map((t) => {
-                      const active = selectedTools.includes(t.id);
-                      return (
-                        <ChipButton
-                          key={t.id}
-                          active={active}
-                          onClick={() => setSelectedTools((prev) => toggleId(prev, t.id))}
-                        >
-                          {t.label}
-                        </ChipButton>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </SectionCard>
-
-            <SectionCard title={tr("본문 (자유 작성)", "本文（自由記入）")}>
+            <SectionCard title={tr("본문", "本文")}>
               <p className="text-xs text-gray-500 mb-3">
-                {tr("프로젝트 소개, 진행 방식, 기대 역할, 연락 방법 등을 작성해 주세요.", "プロジェクト紹介、進行方式、期待役割、連絡方法などを記入してください。")}
+                {tr("프로젝트 소개 및 모집글을 자유롭게 작성해 주세요.", "プロジェクト紹介と募集内容を自由に記入してください。")}
               </p>
               <textarea
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 placeholder={placeholderBody}
-                rows={10}
-                className="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+                rows={14}
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300"
               />
             </SectionCard>
           </div>
 
           {/* Right */}
           <div className="space-y-6">
-            <SectionCard title={tr("공개 설정", "公開設定")}>
-              <p className="text-xs text-gray-500 mb-4">
-                {tr("백엔드 연동 중인 단계에서는 UI만 제공합니다.", "バックエンド連携中の段階では、UIのみ提供します。")}
+            <SectionCard title={tr("모집 포지션", "募集ポジション")}>
+              <p className="text-xs text-gray-500 mb-3">
+                {tr("주요 모집 포지션을 선택해 주세요.", "主な募集ポジションを選択してください。")}
               </p>
 
-              <label className="flex items-center gap-3 text-sm text-gray-800">
-                <input
-                  type="checkbox"
-                  checked={allowComment}
-                  onChange={(e) => setAllowComment(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300"
-                />
-                {tr("댓글 허용", "コメント許可")}
-              </label>
+              <div className="flex flex-wrap gap-2">
+                {POSITION_OPTIONS.map((o) => (
+                  <ChipButton
+                    key={o.value}
+                    active={position === o.value}
+                    onClick={() => setPosition(o.value)}
+                  >
+                    {lang === "JP" ? o.labelJp : o.labelKr}
+                  </ChipButton>
+                ))}
+              </div>
 
-              <label className="mt-3 flex items-center gap-3 text-sm text-gray-800">
-                <input
-                  type="checkbox"
-                  checked={allowShare}
-                  onChange={(e) => setAllowShare(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300"
-                />
-                {tr("공유 허용", "共有許可")}
-              </label>
-
-              <label className="mt-3 flex items-center gap-3 text-sm text-gray-800">
-                <input
-                  type="checkbox"
-                  checked={allowScrap}
-                  onChange={(e) => setAllowScrap(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300"
-                />
-                {tr("스크랩 허용", "スクラップ許可")}
-              </label>
+              <div className="mt-3 text-xs text-gray-600">
+                {tr("선택됨:", "選択:")}{" "}
+                <span className="font-semibold text-gray-900">{positionLabel}</span>
+              </div>
             </SectionCard>
 
-            <SectionCard title={tr("작성 가이드", "作成ガイド")}>
-              <ul className="list-disc pl-5 text-sm text-gray-700 space-y-2">
-                <li>
-                  {tr(
-                    "진행 방식(온라인/오프라인), 주당 회의 빈도를 명확히 작성해 주세요.",
-                    "進行方式（オンライン／オフライン）と週あたりの会議頻度を明確に記入してください。"
-                  )}
-                </li>
-                <li>
-                  {tr(
-                    "모집 역할, 기대 역량, 우대 사항을 구분해 주세요.",
-                    "募集役割、期待スキル、歓迎条件を区別して記入してください。"
-                  )}
-                </li>
-                <li>
-                  {tr(
-                    "연락 방법(오픈채팅, 디스코드 등)과 응답 가능한 시간을 적어 주세요.",
-                    "連絡方法（オープンチャット、Discordなど）と対応可能時間を記入してください。"
-                  )}
-                </li>
-              </ul>
+            <SectionCard title={tr("모집 인원", "募集人数")}>
+              <p className="text-xs text-gray-500 mb-3">
+                {tr("총 모집 인원을 입력해 주세요.", "募集人数を入力してください。")}
+              </p>
+
+              <input
+                type="number"
+                value={Number.isFinite(count) ? String(count) : ""}
+                onChange={(e) => setCount(Number(e.target.value))}
+                placeholder={placeholderCount}
+                min={1}
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300"
+              />
+            </SectionCard>
+
+            <SectionCard title={tr("마감 기한 (필수)", "締切（必須）")}>
+              <p className="text-xs text-gray-500 mb-3">
+                {tr("마감 날짜를 선택해 주세요.", "締切日を選択してください。")}
+              </p>
+
+              <input
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300"
+              />
+            </SectionCard>
+
+            <SectionCard title={tr("기술 스택", "技術スタック")}>
+              <p className="text-xs text-gray-500 mb-3">
+                {tr("프로젝트에 사용할 스택을 선택해 주세요.", "使用するスタックを選択してください。")}
+              </p>
+
+              <div className="flex flex-wrap gap-2">
+                {STACKS.map((s) => (
+                  <ChipButton
+                    key={s.id}
+                    active={selectedStacks.includes(s.id)}
+                    onClick={() => setSelectedStacks((prev) => toggleId(prev, s.id))}
+                  >
+                    {s.label}
+                  </ChipButton>
+                ))}
+              </div>
+            </SectionCard>
+
+            <SectionCard title={tr("협업 도구", "協業ツール")}>
+              <p className="text-xs text-gray-500 mb-3">
+                {tr("협업 도구를 선택해 주세요.", "協業ツールを選択してください。")}
+              </p>
+
+              <div className="flex flex-wrap gap-2">
+                {TOOLS.map((t) => (
+                  <ChipButton
+                    key={t.id}
+                    active={selectedTools.includes(t.id)}
+                    onClick={() => setSelectedTools((prev) => toggleId(prev, t.id))}
+                  >
+                    {t.label}
+                  </ChipButton>
+                ))}
+              </div>
+            </SectionCard>
+
+            <SectionCard title={tr("게시 옵션", "投稿オプション")}>
+              <div className="space-y-3 text-sm">
+                <label className="flex items-center justify-between gap-3">
+                  <span className="text-gray-800">{tr("댓글 허용", "コメントを許可")}</span>
+                  <input
+                    type="checkbox"
+                    checked={allowComment}
+                    onChange={(e) => setAllowComment(e.target.checked)}
+                  />
+                </label>
+
+                <label className="flex items-center justify-between gap-3">
+                  <span className="text-gray-800">{tr("공유 허용", "共有を許可")}</span>
+                  <input
+                    type="checkbox"
+                    checked={allowShare}
+                    onChange={(e) => setAllowShare(e.target.checked)}
+                  />
+                </label>
+
+                <label className="flex items-center justify-between gap-3">
+                  <span className="text-gray-800">{tr("스크랩 허용", "スクラップを許可")}</span>
+                  <input
+                    type="checkbox"
+                    checked={allowScrap}
+                    onChange={(e) => setAllowScrap(e.target.checked)}
+                  />
+                </label>
+              </div>
             </SectionCard>
           </div>
         </div>
