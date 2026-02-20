@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import ThemeToggle from "@/components/theme-toggle";
 import DraftViewer from "@/components/draft/DraftViewer";
 import KanbanBoardDndView from "@/components/kanban/KanbanBoardDndView";
@@ -149,6 +150,7 @@ export default function ProjectDetailPage({
   params: { id: string };
 }) {
   const projectId = params.id;
+  const router = useRouter();
 
   const [data, setData] = useState<{
     project: Project;
@@ -171,6 +173,9 @@ export default function ProjectDetailPage({
 
   const [revisionText, setRevisionText] = useState("");
   const [revisionSubmitting, setRevisionSubmitting] = useState(false);
+
+  // ✅ 프로젝트 삭제 상태
+  const [projectDeleting, setProjectDeleting] = useState(false);
 
   // ---- Add Card Modal state ----
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -288,6 +293,36 @@ export default function ProjectDetailPage({
       setBoard(null);
       setBoardError(`칸반 불러오기 실패: ${String(e)}`);
       setBoardLoading(false);
+    }
+  };
+
+  // ✅ 프로젝트 삭제 (Next /api 프록시 호출 방식 유지)
+  const deleteProject = async () => {
+    const ok = window.confirm(
+      "정말 이 프로젝트를 삭제하시겠습니까?\n삭제하면 되돌릴 수 없습니다."
+    );
+    if (!ok) return;
+
+    setProjectDeleting(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "DELETE",
+      });
+      const text = await res.text();
+
+      if (!res.ok) {
+        alert(`프로젝트 삭제 실패: ${res.status} ${res.statusText}\n${text}`);
+        setProjectDeleting(false);
+        return;
+      }
+
+      alert("프로젝트가 삭제되었습니다.");
+      router.push("/projects");
+      router.refresh();
+    } catch (e) {
+      alert(`프로젝트 삭제 실패: ${String(e)}`);
+    } finally {
+      setProjectDeleting(false);
     }
   };
 
@@ -518,6 +553,18 @@ export default function ProjectDetailPage({
           >
             프로젝트 목록
           </Link>
+
+          {/* ✅ 프로젝트 삭제 버튼 */}
+          {/* 로그인/권한 연동 후에는 '오너만 노출'로 조건을 붙이는 것을 권장합니다. */}
+          <button
+            onClick={deleteProject}
+            disabled={projectDeleting}
+            className="rounded-lg border px-3 py-2 text-sm font-semibold hover:bg-rose-50 disabled:opacity-60 dark:hover:bg-rose-950/30"
+            title="프로젝트 삭제"
+          >
+            {projectDeleting ? "삭제 중..." : "프로젝트 삭제"}
+          </button>
+
           <Link
             href="/drafts"
             className="rounded-lg border px-3 py-2 text-sm font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900"
@@ -859,7 +906,7 @@ export default function ProjectDetailPage({
 function normalizeDecisionValue(v: any): string {
   if (v === null || v === undefined) return "-";
   if (typeof v === "string") return v;
-  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (typeof v === "number" || v === "boolean") return String(v);
   try {
     return JSON.stringify(v);
   } catch {
