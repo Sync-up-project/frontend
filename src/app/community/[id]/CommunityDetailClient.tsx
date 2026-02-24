@@ -1,36 +1,34 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, Eye, MessageSquareText, ThumbsUp } from "lucide-react";
+
 import {
   apiGetCommunityPost,
-  apiGetCommunityComments,
   apiPostCommunityComment,
+  apiToggleCommunityPostLike,
+  apiToUiPostCategory,
 } from "@/lib/api";
+import { fetchCurrentUser, getCurrentUser, saveCurrentUser } from "@/lib/auth";
+import { useI18n } from "@/lib/i18n";
 
 type Category = "free" | "question" | "share" | "review";
-
-type Attachment = {
-  name: string;
-  type: string;
-  size: number;
-};
 
 type Post = {
   id: string;
   category: Category;
   title: string;
-  titleJp?: string;
   content: string;
-  contentJp?: string;
   createdAt: string;
+  updatedAt?: string;
   authorName: string;
-  likes: number;
+  authorEmail?: string;
   views: number;
+  likes: number;
   commentsCount: number;
   tags: string[];
-  attachments?: Attachment[];
 };
 
 type Comment = {
@@ -38,54 +36,65 @@ type Comment = {
   authorName: string;
   createdAt: string;
   content: string;
+  replies: Comment[];
 };
 
-function pickArray(obj: any): any[] {
-  if (!obj) return [];
-  if (Array.isArray(obj)) return obj;
-  if (Array.isArray(obj.items)) return obj.items;
-  if (Array.isArray(obj.comments)) return obj.comments;
-  if (Array.isArray(obj.data)) return obj.data;
-  if (obj.result && Array.isArray(obj.result)) return obj.result;
-  if (obj.result && Array.isArray(obj.result.items)) return obj.result.items;
-  return [];
+async function resolveUserId(): Promise<string | null> {
+  const cached = getCurrentUser();
+  if (cached?.id) return cached.id;
+
+  try {
+    const u = await fetchCurrentUser();
+    if (u?.id) {
+      saveCurrentUser(u);
+      return u.id;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
 }
 
-function normalizePost(raw: any): Post {
-  return {
-    id: String(raw?.id ?? raw?.postId ?? ""),
-    category: (raw?.category ?? "free") as Category,
-    title: String(raw?.title ?? ""),
-    titleJp: raw?.titleJp ?? raw?.titleJa ?? raw?.titleJP,
-    content: String(raw?.content ?? raw?.body ?? ""),
-    contentJp: raw?.contentJp ?? raw?.contentJa ?? raw?.contentJP,
-    createdAt: String(raw?.createdAt ?? raw?.created_at ?? new Date().toISOString()),
-    authorName: String(raw?.authorName ?? raw?.author?.nickname ?? raw?.author ?? ""),
-    likes: Number(raw?.likes ?? raw?.likeCount ?? 0),
-    views: Number(raw?.views ?? raw?.viewCount ?? 0),
-    commentsCount: Number(raw?.commentsCount ?? raw?.commentCount ?? 0),
-    tags: Array.isArray(raw?.tags) ? raw.tags : [],
-    attachments: Array.isArray(raw?.attachments)
-      ? raw.attachments.map((a: any) => ({
-          name: String(a?.name ?? "file"),
-          type: String(a?.type ?? "application/octet-stream"),
-          size: Number(a?.size ?? 0),
-        }))
-      : [],
-  };
+function formatFull(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(
+    2,
+    "0",
+  )} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-function normalizeComment(raw: any): Comment {
-  return {
-    id: String(raw?.id ?? raw?.commentId ?? ""),
-    authorName: String(raw?.authorName ?? raw?.author?.nickname ?? raw?.author ?? ""),
-    createdAt: String(raw?.createdAt ?? raw?.created_at ?? new Date().toISOString()),
-    content: String(raw?.content ?? raw?.body ?? ""),
-  };
+function formatRelative(iso: string) {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return iso;
+
+  const diff = Date.now() - t;
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return "방금";
+  if (min < 60) return `${min}분 전`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}시간 전`;
+  const day = Math.floor(hr / 24);
+  return `${day}일 전`;
 }
 
-function categoryLabel(category: Category) {
-  switch (category) {
+function categoryBadge(cat: Category) {
+  const base = "inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold";
+  switch (cat) {
+    case "question":
+      return `${base} border-blue-200 bg-blue-50 text-blue-700`;
+    case "share":
+      return `${base} border-emerald-200 bg-emerald-50 text-emerald-700`;
+    case "review":
+      return `${base} border-amber-200 bg-amber-50 text-amber-700`;
+    case "free":
+    default:
+      return `${base} border-gray-200 bg-gray-50 text-gray-700`;
+  }
+}
+
+function categoryTextKR(cat: Category) {
+  switch (cat) {
     case "question":
       return "QnA";
     case "share":
@@ -98,120 +107,191 @@ function categoryLabel(category: Category) {
   }
 }
 
-function categoryBadge(category: Category) {
-  const base = "inline-flex items-center px-2 py-1 rounded-md text-xs font-semibold";
-  switch (category) {
+function categoryTextJP(cat: Category) {
+  switch (cat) {
     case "question":
-      return `${base} bg-blue-100 text-blue-700`;
+      return "QnA";
     case "share":
-      return `${base} bg-emerald-100 text-emerald-700`;
+      return "情報共有";
     case "review":
-      return `${base} bg-amber-100 text-amber-700`;
+      return "レビュー";
     case "free":
     default:
-      return `${base} bg-gray-100 text-gray-700`;
+      return "フリー";
   }
 }
 
-function formatRelativeTime(iso: string) {
-  const d = new Date(iso).getTime();
-  const now = Date.now();
-  const diff = Math.max(0, now - d);
+function normalizePost(raw: any): Post {
+  const category = apiToUiPostCategory(raw?.category) as Category;
 
-  const min = Math.floor(diff / 60000);
-  if (min < 1) return "방금 전";
-  if (min < 60) return `${min}분 전`;
+  const title = raw?.titleOriginal ?? raw?.title ?? raw?.i18n?.[0]?.title ?? "";
+  const content = raw?.contentOriginal ?? raw?.content ?? raw?.i18n?.[0]?.content ?? "";
 
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}시간 전`;
-
-  const day = Math.floor(hr / 24);
-  return `${day}일 전`;
+  return {
+    id: String(raw?.id ?? ""),
+    category,
+    title: String(title),
+    content: String(content),
+    createdAt: String(raw?.createdAt ?? new Date().toISOString()),
+    updatedAt: raw?.updatedAt ? String(raw.updatedAt) : undefined,
+    authorName: String(raw?.author?.nickname ?? raw?.authorNickname ?? raw?.authorName ?? "익명"),
+    authorEmail: raw?.author?.email ? String(raw.author.email) : undefined,
+    views: Number(raw?.viewCount ?? 0),
+    likes: Number(raw?.likeCount ?? raw?._count?.likes ?? 0),
+    commentsCount: Number(raw?.commentCount ?? raw?._count?.comments ?? 0),
+    tags: Array.isArray(raw?.tags) ? raw.tags : [],
+  };
 }
 
-function formatFullDate(iso: string) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(
-    d.getDate(),
-  ).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(
-    d.getMinutes(),
-  ).padStart(2, "0")}`;
+function normalizeComment(raw: any): Comment {
+  const content =
+    raw?.contentOriginal ??
+    raw?.content ??
+    raw?.i18n?.[0]?.content ??
+    raw?.i18n?.find?.((x: any) => x?.content)?.content ??
+    "";
+
+  const replies = Array.isArray(raw?.replies) ? raw.replies.map(normalizeComment) : [];
+
+  return {
+    id: String(raw?.id ?? ""),
+    authorName: String(raw?.author?.nickname ?? raw?.authorName ?? "익명"),
+    createdAt: String(raw?.createdAt ?? new Date().toISOString()),
+    content: String(content),
+    replies,
+  };
 }
 
 function Divider() {
-  return <div className="h-px w-full bg-gray-100" />;
+  return <div className="my-6 h-px w-full bg-gray-100" />;
+}
+
+function CommentItem({ c, depth = 0 }: { c: Comment; depth?: number }) {
+  return (
+    <div className={depth > 0 ? "pl-4 border-l border-gray-100" : ""}>
+      <div className="rounded-lg px-1 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-900 truncate">{c.authorName}</p>
+            <p className="text-xs text-gray-500">
+              {formatRelative(c.createdAt)} · {formatFull(c.createdAt)}
+            </p>
+          </div>
+        </div>
+
+        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-800">{c.content}</p>
+
+        {c.replies?.length ? (
+          <div className="mt-3 space-y-2">
+            {c.replies.map((r) => (
+              <CommentItem key={r.id} c={r} depth={depth + 1} />
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+type ToggleLikeResult = {
+  likeCount?: number;
+  liked?: boolean;
+};
+
+function extractToggleLikeResult(payload: any): ToggleLikeResult {
+  const raw = payload?.data && typeof payload.data === "object" ? payload.data : payload;
+  if (!raw || typeof raw !== "object") return {};
+  const likeCount =
+    typeof raw.likeCount === "number"
+      ? raw.likeCount
+      : typeof raw.likes === "number"
+      ? raw.likes
+      : undefined;
+
+  const liked =
+    typeof raw.liked === "boolean"
+      ? raw.liked
+      : typeof raw.isLiked === "boolean"
+      ? raw.isLiked
+      : undefined;
+
+  return { likeCount, liked };
 }
 
 export default function CommunityDetailClient() {
-  const params = useParams();
-  const router = useRouter();
-  const postId = String((params as any)?.id ?? "");
+  const params = useParams<{ id: string }>();
+  const postId = String(params?.id ?? "");
+  const { tr, lang } = useI18n();
 
   const [post, setPost] = useState<Post | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
-  const [commentDraft, setCommentDraft] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const [loadingPost, setLoadingPost] = useState(false);
-  const [loadingComments, setLoadingComments] = useState(false);
+  const [commentDraft, setCommentDraft] = useState("");
   const [postingComment, setPostingComment] = useState(false);
 
-  const [errorPost, setErrorPost] = useState<string | null>(null);
-  const [errorComments, setErrorComments] = useState<string | null>(null);
+  const [liking, setLiking] = useState(false);
+  const [likedByMe, setLikedByMe] = useState(false);
 
-  // 상세 조회
-  useEffect(() => {
+  async function load() {
     if (!postId) return;
-    let mounted = true;
-    (async () => {
-      setLoadingPost(true);
-      setErrorPost(null);
-      try {
-        const res = await apiGetCommunityPost(postId);
-        const raw = res?.data && typeof res.data === "object" ? res.data : res;
-        const normalized = normalizePost(raw);
-        if (mounted) setPost(normalized);
-      } catch (e: any) {
-        if (mounted) setErrorPost(e?.message ?? "Failed to load post");
-      } finally {
-        if (mounted) setLoadingPost(false);
-      }
-    })();
+    setLoading(true);
+    setError(null);
 
-    return () => {
-      mounted = false;
-    };
+    try {
+      const res = await apiGetCommunityPost(postId);
+      const raw = (res as any)?.data && typeof (res as any).data === "object" ? (res as any).data : res;
+
+      setPost(normalizePost(raw));
+      setComments(Array.isArray(raw?.comments) ? raw.comments.map(normalizeComment) : []);
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postId]);
 
-  // 댓글 조회
-  useEffect(() => {
+  const originalLang = useMemo(() => (lang === "JP" ? "JA" : "KO"), [lang]);
+
+  async function onLikeClick() {
     if (!postId) return;
-    let mounted = true;
-    (async () => {
-      setLoadingComments(true);
-      setErrorComments(null);
-      try {
-        const res = await apiGetCommunityComments(postId);
-        const list = pickArray(res).map(normalizeComment);
 
-        // 최신순
-        list.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-
-        if (mounted) setComments(list);
-      } catch (e: any) {
-        if (mounted) setErrorComments(e?.message ?? "Failed to load comments");
-      } finally {
-        if (mounted) setLoadingComments(false);
+    setLiking(true);
+    try {
+      const userId = await resolveUserId();
+      if (!userId) {
+        alert(tr("로그인이 필요합니다.", "ログインが必要です。"));
+        return;
       }
-    })();
 
-    return () => {
-      mounted = false;
-    };
-  }, [postId]);
+      const res = await apiToggleCommunityPostLike(postId, userId);
+      const { likeCount, liked } = extractToggleLikeResult(res);
 
-  const attachments = useMemo(() => post?.attachments ?? [], [post]);
-  const tags = useMemo(() => post?.tags ?? [], [post]);
+      setPost((prev) => {
+        if (!prev) return prev;
+
+        if (typeof likeCount === "number") {
+          return { ...prev, likes: likeCount };
+        }
+
+        const nextLiked = typeof liked === "boolean" ? liked : !likedByMe;
+        const delta = nextLiked ? 1 : -1;
+        return { ...prev, likes: Math.max(0, prev.likes + delta) };
+      });
+
+      setLikedByMe((prev) => (typeof liked === "boolean" ? liked : !prev));
+    } catch (e: any) {
+      alert(e?.message ?? tr("좋아요 처리에 실패했습니다.", "いいね処理に失敗しました。"));
+    } finally {
+      setLiking(false);
+    }
+  }
 
   async function submitComment() {
     const content = commentDraft.trim();
@@ -219,256 +299,214 @@ export default function CommunityDetailClient() {
 
     setPostingComment(true);
     try {
-      const res = await apiPostCommunityComment(postId, { content });
-      const maybeRaw =
-        res?.data && typeof res.data === "object" ? res.data : res;
-
-      if (maybeRaw && (maybeRaw.id || maybeRaw.commentId)) {
-        const created = normalizeComment(maybeRaw);
-        setComments((prev) => [created, ...prev]);
-      } else {
-        //재조회
-        const reload = await apiGetCommunityComments(postId);
-        const list = pickArray(reload).map(normalizeComment);
-        list.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-        setComments(list);
+      const authorId = await resolveUserId();
+      if (!authorId) {
+        alert(tr("로그인이 필요합니다.", "ログインが必要です。"));
+        return;
       }
 
-      // 댓글 수 반영
-      setPost((prev) =>
-        prev ? { ...prev, commentsCount: (prev.commentsCount ?? 0) + 1 } : prev,
-      );
+      const res = await apiPostCommunityComment(postId, {
+        authorId,
+        content,
+        originalLang,
+      });
+
+      const raw = (res as any)?.data && typeof (res as any).data === "object" ? (res as any).data : res;
+      const created = raw && typeof raw === "object" ? normalizeComment(raw) : null;
+
+      if (created && created.id) {
+        setComments((prev) => [...prev, created]);
+        setPost((prev) => (prev ? { ...prev, commentsCount: prev.commentsCount + 1 } : prev));
+      } else {
+        setPost((prev) => (prev ? { ...prev, commentsCount: prev.commentsCount + 1 } : prev));
+      }
 
       setCommentDraft("");
     } catch (e: any) {
-      alert(e?.message ?? "댓글 작성에 실패했습니다.");
+      alert(e?.message ?? tr("댓글 작성에 실패했습니다.", "コメント投稿に失敗しました。"));
     } finally {
       setPostingComment(false);
     }
   }
 
-  // 좋아요
-  function onLikeClick() {
-    alert("좋아요 API가 준비되면 연동 예정입니다.");
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white">
+        <div className="mx-auto w-full max-w-[980px] px-6 lg:px-10 py-10">
+          <p className="text-sm text-gray-500">Loading...</p>
+        </div>
+      </div>
+    );
   }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-white">
+        <div className="mx-auto w-full max-w-[980px] px-6 lg:px-10 py-10">
+          <p className="text-sm text-red-600">{error}</p>
+          <Link href="/community" className="mt-4 inline-block text-sm text-gray-700 underline">
+            {tr("목록으로", "一覧へ")}
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (!post) return null;
 
   return (
     <div className="min-h-screen bg-white">
-      <div className="mx-auto w-full max-w-[1200px] px-6 lg:px-10 py-6">
-        <div className="mb-4 flex items-center justify-between gap-4">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition"
-          >
-            ← 뒤로
-          </button>
-
+      <div className="mx-auto w-full max-w-[980px] px-6 lg:px-10 py-6">
+        <div className="mb-4 flex items-center justify-between">
           <Link
-            href="/community"
-            className="text-sm font-semibold text-gray-700 hover:text-gray-900"
+            href={`/community?tab=${post.category}`}
+            className="group inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
           >
-            목록으로
+            <ArrowLeft size={16} strokeWidth={2} className="text-gray-500 group-hover:text-gray-700" />
+            {tr("목록", "一覧")}
           </Link>
+          <div />
         </div>
 
-        <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
-          {loadingPost ? (
-            <div className="p-8">
-              <p className="text-sm text-gray-700">불러오는 중...</p>
-            </div>
-          ) : errorPost ? (
-            <div className="p-8">
-              <p className="text-sm text-red-600">게시글을 불러오지 못했습니다.</p>
-              <p className="mt-2 text-xs text-gray-500 break-words">{errorPost}</p>
-            </div>
-          ) : !post || !post.id ? (
-            <div className="p-8">
-              <p className="text-sm text-gray-700">게시글이 존재하지 않습니다.</p>
-            </div>
-          ) : (
-            <>
-              {/* Header */}
-              <div className="p-6">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className={categoryBadge(post.category)}>
-                        {categoryLabel(post.category)}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {formatRelativeTime(post.createdAt)}
-                      </span>
-                    </div>
+        <div className="rounded-xl border border-gray-200 bg-white">
+          {/* Header */}
+          <div className="p-5">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={categoryBadge(post.category)}>
+                    {tr(categoryTextKR(post.category), categoryTextJP(post.category))}
+                  </span>
 
-                    <h1 className="mt-3 text-xl font-semibold text-gray-900">
-                      {post.title}
-                    </h1>
+                  <h1 className="min-w-0 text-xl md:text-2xl font-extrabold text-gray-900 leading-snug">
+                    {post.title}
+                  </h1>
+                </div>
 
-                    <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                      <span className="font-semibold text-gray-700">
-                        {post.authorName}
+                <div className="mt-2 text-sm text-gray-600">
+                  <span className="font-semibold text-gray-900">{post.authorName}</span>
+                  <span className="mx-2 text-gray-300">|</span>
+                  <span className="text-gray-500">{formatFull(post.createdAt)}</span>
+                  {post.updatedAt ? (
+                    <>
+                      <span className="mx-2 text-gray-300">|</span>
+                      <span className="text-gray-500">
+                        {tr("수정", "更新")}: {formatFull(post.updatedAt)}
                       </span>
-                      <span>·</span>
-                      <span>{formatFullDate(post.createdAt)}</span>
-                      <span>·</span>
-                      <span>조회 {post.views}</span>
-                      <span>·</span>
-                      <span>댓글 {post.commentsCount}</span>
-                      <span>·</span>
-                      <span>좋아요 {post.likes}</span>
-                    </div>
+                    </>
+                  ) : null}
+                </div>
 
-                    {tags.length > 0 ? (
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {tags.map((t) => (
-                          <span
-                            key={t}
-                            className="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700"
-                          >
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
+                {post.tags?.length ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {post.tags.map((t) => (
+                      <span key={t} className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">
+                        #{t}
+                      </span>
+                    ))}
                   </div>
+                ) : null}
+              </div>
 
+              {/* Metrics */}
+              <div className="flex items-center gap-5 text-xs text-gray-600 md:justify-end">
+                <div className="flex items-center gap-1">
+                  <Eye size={14} strokeWidth={1.6} className="text-gray-400" />
+                  <span>{post.views}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <MessageSquareText size={14} strokeWidth={1.6} className="text-gray-400" />
+                  <span>{post.commentsCount}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Header/Content divider */}
+          <div className="h-px w-full bg-gray-100" />
+
+          {/* Content */}
+          <div className="p-5">
+            <div className="whitespace-pre-wrap text-sm leading-7 text-gray-800">{post.content}</div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={onLikeClick}
+                disabled={liking}
+                className={[
+                  "inline-flex items-center gap-2 rounded-full border px-5 py-2 text-sm font-semibold transition",
+                  liking
+                    ? "border-gray-200 bg-white text-gray-400"
+                    : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50",
+                ].join(" ")}
+              >
+                <ThumbsUp
+                  size={16}
+                  strokeWidth={1.8}
+                  className={likedByMe || post.likes > 0 ? "text-blue-600" : "text-gray-400"}
+                />
+                {liking ? tr("처리 중...", "処理中...") : tr("좋아요", "いいね")}
+                <span className="text-gray-400">({post.likes})</span>
+              </button>
+            </div>
+          </div>
+
+          {/* ✅ 댓글 위 “굵은 구분선” 제거. 여백으로만 분리 */}
+          <div className="px-5 pb-5">
+            <div className="mt-2">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-extrabold text-gray-900">
+                  {tr("댓글", "コメント")} <span className="text-gray-400">({comments.length})</span>
+                </h2>
+              </div>
+
+              <Divider />
+
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <textarea
+                  value={commentDraft}
+                  onChange={(e) => setCommentDraft(e.target.value)}
+                  placeholder={tr("댓글을 입력하세요", "コメントを入力してください")}
+                  className="h-[110px] w-full resize-none rounded-md border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-200"
+                />
+                <div className="mt-2 flex justify-end">
                   <button
                     type="button"
-                    onClick={onLikeClick}
-                    disabled
-                    className="shrink-0 inline-flex items-center justify-center rounded-xl border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-400 cursor-not-allowed"
-                    title="좋아요 API가 준비되면 연동 예정"
+                    onClick={submitComment}
+                    disabled={postingComment || commentDraft.trim().length === 0}
+                    className={[
+                      "rounded-lg px-4 py-2 text-sm font-semibold text-white transition",
+                      postingComment || commentDraft.trim().length === 0
+                        ? "bg-gray-300 cursor-not-allowed"
+                        : "bg-blue-600 hover:bg-blue-700",
+                    ].join(" ")}
                   >
-                    👍 좋아요
+                    {postingComment ? tr("등록 중...", "投稿中...") : tr("등록", "投稿")}
                   </button>
                 </div>
               </div>
 
-              <Divider />
-
-              {/* Body */}
-              <div className="p-6">
-                <div className="prose max-w-none">
-                  <p className="whitespace-pre-wrap text-sm leading-6 text-gray-800">
-                    {post.content}
+              <div className="mt-4">
+                {comments.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-gray-500">
+                    {tr("댓글이 없습니다.", "コメントがありません。")}
                   </p>
-                </div>
-
-                {attachments.length > 0 ? (
-                  <>
-                    <div className="mt-6">
-                      <p className="text-sm font-semibold text-gray-900">
-                        첨부파일
-                      </p>
-                      <div className="mt-3 space-y-2">
-                        {attachments.map((a) => (
-                          <div
-                            key={`${a.name}-${a.size}`}
-                            className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3"
-                          >
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold text-gray-900 line-clamp-1">
-                                {a.name}
-                              </p>
-                              <p className="mt-1 text-xs text-gray-500">
-                                {a.type} · {Math.max(0, Math.floor(a.size / 1024))}KB
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-400 cursor-not-allowed"
-                              disabled
-                              title="첨부파일 다운로드 API 연동 필요"
-                            >
-                              다운로드
-                            </button>
-                          </div>
-                        ))}
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {comments.map((c) => (
+                      <div key={c.id} className="py-2">
+                        <CommentItem c={c} />
                       </div>
-                    </div>
-                  </>
-                ) : null}
-              </div>
-
-              <Divider />
-
-              {/* Comments */}
-              <div className="p-6">
-                <div className="mb-3 flex items-center justify-between">
-                  <p className="text-sm font-semibold text-gray-900">
-                    댓글 {comments.length}
-                  </p>
-                </div>
-
-                {/* comment input */}
-                <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                  <textarea
-                    value={commentDraft}
-                    onChange={(e) => setCommentDraft(e.target.value)}
-                    placeholder="댓글을 입력하세요"
-                    rows={3}
-                    className="w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-gray-200"
-                  />
-                  <div className="mt-3 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={submitComment}
-                      disabled={postingComment || commentDraft.trim().length === 0}
-                      className={[
-                        "rounded-xl px-4 py-2 text-sm font-semibold transition",
-                        postingComment || commentDraft.trim().length === 0
-                          ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                          : "bg-gray-900 text-white hover:bg-gray-800",
-                      ].join(" ")}
-                    >
-                      {postingComment ? "등록 중..." : "댓글 등록"}
-                    </button>
+                    ))}
                   </div>
-                </div>
-
-                {/* list */}
-                <div className="mt-6">
-                  {loadingComments ? (
-                    <p className="text-sm text-gray-700">댓글 불러오는 중...</p>
-                  ) : errorComments ? (
-                    <div className="rounded-xl border border-gray-200 bg-white p-4">
-                      <p className="text-sm text-red-600">
-                        댓글을 불러오지 못했습니다.
-                      </p>
-                      <p className="mt-2 text-xs text-gray-500 break-words">
-                        {errorComments}
-                      </p>
-                    </div>
-                  ) : comments.length === 0 ? (
-                    <p className="text-sm text-gray-600">아직 댓글이 없습니다.</p>
-                  ) : (
-                    <ul className="space-y-3">
-                      {comments.map((c) => (
-                        <li
-                          key={c.id}
-                          className="rounded-2xl border border-gray-200 bg-white p-4"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-sm font-semibold text-gray-900">
-                              {c.authorName}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {formatRelativeTime(c.createdAt)}
-                            </p>
-                          </div>
-                          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-800">
-                            {c.content}
-                          </p>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
+                )}
               </div>
-            </>
-          )}
+            </div>
+          </div>
         </div>
+
+        <div className="h-10" />
       </div>
     </div>
   );

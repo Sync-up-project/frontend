@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useI18n } from "@/lib/i18n";
 import { apiPostCommunityPost } from "@/lib/api";
+import { fetchCurrentUser, getCurrentUser, saveCurrentUser } from "@/lib/auth";
 
 type Category = "free" | "question" | "share" | "review";
 
@@ -11,30 +13,33 @@ function isCategory(v: string | null): v is Category {
   return v === "free" || v === "question" || v === "share" || v === "review";
 }
 
-function categoryLabel(category: Category) {
-  switch (category) {
-    case "question":
-      return "QnA";
-    case "share":
-      return "정보 공유";
-    case "review":
-      return "후기";
-    case "free":
-    default:
-      return "자유";
-  }
-}
-
-const CATEGORIES: { key: Category; label: string }[] = [
-  { key: "free", label: "자유" },
-  { key: "question", label: "QnA" },
-  { key: "share", label: "정보 공유" },
-  { key: "review", label: "후기" },
+const CATEGORIES: { key: Category; labelKr: string; labelJp: string }[] = [
+  { key: "free", labelKr: "자유", labelJp: "フリー" },
+  { key: "question", labelKr: "QnA", labelJp: "QnA" },
+  { key: "share", labelKr: "정보 공유", labelJp: "情報共有" },
+  { key: "review", labelKr: "후기", labelJp: "レビュー" },
 ];
+
+async function resolveAuthorId(): Promise<string | null> {
+  const cached = getCurrentUser();
+  if (cached?.id) return cached.id;
+
+  try {
+    const u = await fetchCurrentUser();
+    if (u?.id) {
+      saveCurrentUser(u);
+      return u.id;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
 
 export default function CommunityWriteClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { tr, lang } = useI18n();
 
   const initialCategory = useMemo<Category>(() => {
     const q = searchParams.get("category");
@@ -45,7 +50,6 @@ export default function CommunityWriteClient() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [tagsInput, setTagsInput] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -57,40 +61,42 @@ export default function CommunityWriteClient() {
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
-    // 중복 제거
     return Array.from(new Set(raw)).slice(0, 10);
   }, [tagsInput]);
 
-  const canSubmit = title.trim().length > 0 && content.trim().length > 0 && !submitting;
-
-  function onFilesChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const list = Array.from(e.target.files ?? []);
-    setFiles(list);
-  }
+  const canSubmit =
+    title.trim().length > 0 && content.trim().length > 0 && !submitting;
 
   async function onSubmit() {
     if (!canSubmit) return;
 
     setSubmitting(true);
     try {
-      void files;
+      const authorId = await resolveAuthorId();
+      if (!authorId) {
+        alert(tr("로그인이 필요합니다.", "ログインが必要です。"));
+        return;
+      }
+
+      // i18n.tsx는 KR/JP로 운영되는 구조라서, 백엔드 Language enum에 맞춰 KO/JA로 변환
+      const originalLang = lang === "JP" ? "JA" : "KO";
 
       const res = await apiPostCommunityPost({
+        authorId,
         category,
         title: title.trim(),
         content: content.trim(),
         tags,
+        originalLang,
       });
-      const raw = res?.data && typeof res.data === "object" ? res.data : res;
-      const id = raw?.id ?? raw?.postId;
 
-      if (id) {
-        router.push(`/community/${id}`);
-      } else {
-        router.push(`/community?tab=${category}`);
-      }
+      const raw = (res as any)?.data && typeof (res as any).data === "object" ? (res as any).data : res;
+      const id = (raw as any)?.id ?? (raw as any)?.postId;
+
+      if (id) router.push(`/community/${id}`);
+      else router.push(`/community?tab=${category}`);
     } catch (e: any) {
-      alert(e?.message ?? "게시글 작성에 실패했습니다.");
+      alert(e?.message ?? tr("게시글 작성에 실패했습니다.", "投稿に失敗しました。"));
     } finally {
       setSubmitting(false);
     }
@@ -101,160 +107,121 @@ export default function CommunityWriteClient() {
       <div className="mx-auto w-full max-w-[960px] px-6 lg:px-10 py-6">
         <div className="mb-4 flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-lg font-semibold text-gray-900">글쓰기</h1>
-            <p className="mt-1 text-sm text-gray-600">
-              카테고리를 선택하고, 제목/본문/태그를 입력해 주세요.
+            <h1 className="text-2xl font-extrabold text-gray-900">
+              {tr("글쓰기", "投稿")}
+            </h1>
+            <p className="mt-1 text-sm text-gray-500">
+              {tr("카테고리를 선택하고 글을 작성하세요.", "カテゴリを選んで投稿してください。")}
             </p>
           </div>
 
-          <Link
-            href={`/community?tab=${category}`}
-            className="text-sm font-semibold text-gray-700 hover:text-gray-900"
-          >
-            목록으로
-          </Link>
-        </div>
-
-        <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
-          <div className="p-6 space-y-6">
-            {/* Category */}
-            <div>
-              <p className="text-sm font-semibold text-gray-900">카테고리</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {CATEGORIES.map((c) => {
-                  const selected = category === c.key;
-                  return (
-                    <button
-                      key={c.key}
-                      type="button"
-                      onClick={() => setCategory(c.key)}
-                      className={[
-                        "rounded-xl px-4 py-2 text-sm font-semibold border transition",
-                        selected
-                          ? "bg-gray-900 text-white border-gray-900"
-                          : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50",
-                      ].join(" ")}
-                    >
-                      {c.label}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="mt-2 text-xs text-gray-500">
-                선택됨: <span className="font-semibold">{categoryLabel(category)}</span>
-              </p>
-            </div>
-
-            {/* Title */}
-            <div>
-              <p className="text-sm font-semibold text-gray-900">제목</p>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="제목을 입력하세요"
-                className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-gray-200"
-              />
-              <p className="mt-2 text-xs text-gray-500">{title.trim().length}/100</p>
-            </div>
-
-            {/* Content */}
-            <div>
-              <p className="text-sm font-semibold text-gray-900">본문</p>
-              <textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                placeholder="내용을 입력하세요"
-                rows={10}
-                className="mt-2 w-full resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-gray-200"
-              />
-              <p className="mt-2 text-xs text-gray-500">{content.trim().length}/5000</p>
-            </div>
-
-            {/* Tags */}
-            <div>
-              <p className="text-sm font-semibold text-gray-900">태그</p>
-              <input
-                value={tagsInput}
-                onChange={(e) => setTagsInput(e.target.value)}
-                placeholder="예: nextjs, prisma, 면접 (쉼표로 구분)"
-                className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-gray-200"
-              />
-              {tags.length > 0 ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {tags.map((t) => (
-                    <span
-                      key={t}
-                      className="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700"
-                    >
-                      {t}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-2 text-xs text-gray-500">태그는 선택입니다.</p>
-              )}
-            </div>
-
-            {/* Attachments (UI only) */}
-            <div>
-              <p className="text-sm font-semibold text-gray-900">첨부파일</p>
-              <input
-                type="file"
-                multiple
-                onChange={onFilesChange}
-                className="mt-2 block w-full text-sm text-gray-700"
-              />
-              <p className="mt-2 text-xs text-gray-500">
-                업로드 API가 준비되면 파일도 서버로 전송되도록 연동할 예정입니다.
-              </p>
-              {files.length > 0 ? (
-                <div className="mt-3 space-y-2">
-                  {files.map((f) => (
-                    <div
-                      key={`${f.name}-${f.size}`}
-                      className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 line-clamp-1">{f.name}</p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          {f.type || "unknown"} · {Math.max(0, Math.floor(f.size / 1024))}KB
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-400 cursor-not-allowed"
-                        disabled
-                        title="업로드/삭제 API 연동 필요"
-                      >
-                        제거
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 border-t border-gray-100 bg-white p-6">
+          <div className="flex items-center gap-2">
             <Link
               href={`/community?tab=${category}`}
-              className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition"
+              className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
             >
-              취소
+              {tr("목록", "一覧")}
             </Link>
-
             <button
               type="button"
               onClick={onSubmit}
               disabled={!canSubmit}
               className={[
-                "rounded-xl px-4 py-2.5 text-sm font-semibold transition",
+                "rounded-xl px-4 py-2 text-sm font-semibold text-white",
                 canSubmit
-                  ? "bg-gray-900 text-white hover:bg-gray-800"
-                  : "bg-gray-200 text-gray-500 cursor-not-allowed",
+                  ? "bg-gray-900 hover:bg-gray-800"
+                  : "bg-gray-300 cursor-not-allowed",
               ].join(" ")}
             >
-              {submitting ? "등록 중..." : "등록"}
+              {submitting ? tr("저장 중...", "保存中...") : tr("등록", "投稿")}
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-white p-4">
+          <label className="block text-sm font-semibold text-gray-900">
+            {tr("카테고리", "カテゴリ")}
+          </label>
+
+          <div className="mt-2 flex flex-wrap gap-2">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => setCategory(c.key)}
+                className={[
+                  "rounded-xl px-4 py-2 text-sm font-semibold border transition",
+                  category === c.key
+                    ? "bg-gray-900 text-white border-gray-900"
+                    : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50",
+                ].join(" ")}
+              >
+                {tr(c.labelKr, c.labelJp)}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-6">
+            <label className="block text-sm font-semibold text-gray-900">
+              {tr("제목", "タイトル")}
+            </label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+              placeholder={tr("제목을 입력하세요", "タイトルを入力してください")}
+            />
+          </div>
+
+          <div className="mt-6">
+            <label className="block text-sm font-semibold text-gray-900">
+              {tr("내용", "内容")}
+            </label>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="mt-2 h-[280px] w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+              placeholder={tr("내용을 입력하세요", "内容を入力してください")}
+            />
+          </div>
+
+          <div className="mt-6">
+            <label className="block text-sm font-semibold text-gray-900">
+              {tr("태그(쉼표로 구분)", "タグ(カンマ区切り)")}
+            </label>
+            <input
+              value={tagsInput}
+              onChange={(e) => setTagsInput(e.target.value)}
+              className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+              placeholder={tr("예: Next.js, NestJS, Prisma", "例: Next.js, NestJS, Prisma")}
+            />
+            {tags.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {tags.map((t) => (
+                  <span
+                    key={t}
+                    className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600"
+                  >
+                    #{t}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="mt-8 flex justify-end">
+            <button
+              type="button"
+              onClick={onSubmit}
+              disabled={!canSubmit}
+              className={[
+                "rounded-xl px-5 py-3 text-sm font-semibold text-white",
+                canSubmit
+                  ? "bg-gray-900 hover:bg-gray-800"
+                  : "bg-gray-300 cursor-not-allowed",
+              ].join(" ")}
+            >
+              {submitting ? tr("저장 중...", "保存中...") : tr("등록", "投稿")}
             </button>
           </div>
         </div>
