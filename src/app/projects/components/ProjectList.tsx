@@ -8,28 +8,21 @@ export type ProjectItem = {
   id: string;
   title: string;
   description: string;
-
-  /**
-   * ✅ 백엔드 변경에 덜 깨지게 string으로 받습니다.
-   * - 예: "frontend" / "backend" / "FRONTEND" / "백엔드" 등 무엇이 와도 표시 가능
-   */
   position: string;
-
   tags: string[];
   currentCount: number;
   totalCount: number;
 };
 
 type Props = {
-  projects: ProjectItem[];
+  // ✅ 방어: undefined 가능
+  projects?: ProjectItem[];
 };
 
 function PositionBadge({ position }: { position: string }) {
   const { tr } = useI18n();
   const base = "inline-flex items-center px-2 py-1 rounded-md text-xs font-semibold";
 
-  // ✅ “색상”만 프론트에서 알고 있는 값에 한해 매핑하고,
-  // 모르는 값은 회색으로 fallback
   const key = (position ?? "").toLowerCase();
 
   const className =
@@ -49,8 +42,6 @@ function PositionBadge({ position }: { position: string }) {
       ? "bg-rose-100 text-rose-700"
       : "bg-gray-100 text-gray-700";
 
-  // ✅ 텍스트는 “오는 값 그대로” 우선 표시
-  // 다만 빈 값이면 전체로 fallback
   const label =
     typeof position === "string" && position.trim().length > 0
       ? position
@@ -62,6 +53,9 @@ function PositionBadge({ position }: { position: string }) {
 export default function ProjectList({ projects }: Props) {
   const { tr } = useI18n();
 
+  // ✅ 핵심: UI 그대로, 크래시만 방지
+  const list = Array.isArray(projects) ? projects : [];
+
   return (
     <section className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
       <div className="hidden md:grid grid-cols-12 gap-3 px-5 py-3 border-b border-gray-100 text-[11px] font-semibold text-gray-500">
@@ -71,13 +65,13 @@ export default function ProjectList({ projects }: Props) {
         <div className="col-span-1 text-right">{tr("모집인원", "募集人数")}</div>
       </div>
 
-      {projects.length === 0 ? (
+      {list.length === 0 ? (
         <div className="p-6 text-sm text-gray-600">
           {tr("표시할 프로젝트가 없습니다.", "表示できるプロジェクトがありません。")}
         </div>
       ) : (
         <div className="divide-y divide-gray-100">
-          {projects.map((p) => (
+          {list.map((p) => (
             <Link
               key={p.id}
               href={`/projects/${p.id}`}
@@ -95,7 +89,7 @@ export default function ProjectList({ projects }: Props) {
 
                 <div className="col-span-6 md:col-span-4">
                   <div className="flex flex-wrap gap-2">
-                    {p.tags.slice(0, 3).map((t) => (
+                    {(p.tags ?? []).slice(0, 3).map((t) => (
                       <span
                         key={t}
                         className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700"
@@ -103,8 +97,8 @@ export default function ProjectList({ projects }: Props) {
                         {t}
                       </span>
                     ))}
-                    {p.tags.length > 3 ? (
-                      <span className="text-xs text-gray-500">+{p.tags.length - 3}</span>
+                    {(p.tags ?? []).length > 3 ? (
+                      <span className="text-xs text-gray-500">+{(p.tags ?? []).length - 3}</span>
                     ) : null}
                   </div>
                 </div>
