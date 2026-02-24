@@ -1,4 +1,3 @@
-// src/app/projects/create/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -37,26 +36,17 @@ export default function ProjectCreateChooserPage() {
 
       <div className="mt-8 grid gap-4 md:grid-cols-2">
         {/* 직접 생성 */}
-        <div
-          className={[
-            "rounded-2xl border bg-white p-6 shadow-sm",
-            "dark:border-neutral-800 dark:bg-neutral-950",
-            "transition duration-200 ease-out",
-            "hover:-translate-y-1 hover:scale-[1.01] hover:shadow-md",
-          ].join(" ")}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-xl font-bold">
-                {tr("직접 생성", "手動で作成")}
-              </h2>
-              <p className="mt-3 text-sm text-gray-600 dark:text-neutral-400">
-                {tr(
-                  "제목/기간/스택/모집 포지션 등 모든 항목을 직접 입력하고 바로 프로젝트를 생성합니다.",
-                  "タイトル/期間/スタック/募集ポジションなどを入力して、すぐにプロジェクトを作成します。"
-                )}
-              </p>
-            </div>
+        <div className="rounded-2xl border bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 transition duration-200 ease-out hover:-translate-y-1 hover:scale-[1.01] hover:shadow-md">
+          <div className="space-y-3">
+            <h2 className="text-xl font-bold">
+              {tr("직접 생성", "手動で作成")}
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-neutral-400">
+              {tr(
+                "제목/기간/스택/모집 포지션 등 모든 항목을 직접 입력하고 바로 프로젝트를 생성합니다.",
+                "タイトル/期間/スタック/募集ポジションなどを入力して、すぐにプロジェクトを作成します。"
+              )}
+            </p>
           </div>
 
           <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-gray-600 dark:text-neutral-400">
@@ -65,16 +55,10 @@ export default function ProjectCreateChooserPage() {
             <li>{tr("빠르게 프로젝트를 만들어야 할 때", "すぐ作りたい場合")}</li>
           </ul>
 
-          <div className="mt-6 flex flex-wrap gap-2">
+          <div className="mt-6">
             <Link
               href="/projects/new"
-              className={[
-                "inline-flex items-center justify-center rounded-xl",
-                "bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white",
-                "transition duration-200 ease-out",
-                "hover:bg-gray-800 hover:scale-[1.02] active:scale-[0.99]",
-                "focus:outline-none focus:ring-2 focus:ring-black/20",
-              ].join(" ")}
+              className="inline-flex items-center justify-center rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800 hover:scale-[1.02] active:scale-[0.99]"
             >
               {tr("직접 생성 시작", "手動作成を開始")}
             </Link>
@@ -82,26 +66,17 @@ export default function ProjectCreateChooserPage() {
         </div>
 
         {/* 자동 생성 */}
-        <div
-          className={[
-            "rounded-2xl border bg-white p-6 shadow-sm",
-            "dark:border-neutral-800 dark:bg-neutral-950",
-            "transition duration-200 ease-out",
-            "hover:-translate-y-1 hover:scale-[1.01] hover:shadow-md",
-          ].join(" ")}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-xl font-bold">
-                {tr("자동 생성 (드래프트)", "自動生成（ドラフト）")}
-              </h2>
-              <p className="mt-3 text-sm text-gray-600 dark:text-neutral-400">
-                {tr(
-                  "아이디어 한 줄로 드래프트를 먼저 만든 뒤, 내용을 확인/수정하고 확정(Confirm)하면 프로젝트가 생성됩니다.",
-                  "アイデアからドラフトを作成し、内容を確認/編集して確定（Confirm）するとプロジェクトが作成されます。"
-                )}
-              </p>
-            </div>
+        <div className="rounded-2xl border bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 transition duration-200 ease-out hover:-translate-y-1 hover:scale-[1.01] hover:shadow-md">
+          <div className="space-y-3">
+            <h2 className="text-xl font-bold">
+              {tr("자동 생성 (드래프트)", "自動生成（ドラフト）")}
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-neutral-400">
+              {tr(
+                "아이디어 한 줄로 드래프트를 먼저 만든 뒤, 내용을 확인/수정하고 확정(Confirm)하면 프로젝트가 생성됩니다.",
+                "アイデアからドラフトを作成し、内容を確認/編集して確定するとプロジェクトが作成されます。"
+              )}
+            </p>
           </div>
 
           <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-gray-600 dark:text-neutral-400">
@@ -110,32 +85,12 @@ export default function ProjectCreateChooserPage() {
             <li>{tr("여러 후보안을 만들어 비교하고 싶을 때", "複数案を比較したい場合")}</li>
           </ul>
 
-          <div className="mt-6 flex flex-wrap gap-2">
+          <div className="mt-6">
             <Link
               href="/generate"
-              className={[
-                "inline-flex items-center justify-center rounded-xl",
-                "bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white",
-                "transition duration-200 ease-out",
-                "hover:bg-indigo-500 hover:scale-[1.02] active:scale-[0.99]",
-                "focus:outline-none focus:ring-2 focus:ring-indigo-500/30",
-              ].join(" ")}
+              className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 hover:scale-[1.02] active:scale-[0.99]"
             >
               {tr("자동 생성 시작", "自動生成を開始")}
-            </Link>
-
-            <Link
-              href="/drafts"
-              className={[
-                "inline-flex items-center justify-center rounded-xl border",
-                "px-4 py-2.5 text-sm font-semibold",
-                "hover:bg-gray-50 dark:border-neutral-800 dark:hover:bg-neutral-900",
-                "transition duration-200 ease-out",
-                "hover:scale-[1.02] active:scale-[0.99]",
-                "focus:outline-none focus:ring-2 focus:ring-black/10",
-              ].join(" ")}
-            >
-              {tr("기존 드래프트 보기", "既存ドラフトを見る")}
             </Link>
           </div>
         </div>
