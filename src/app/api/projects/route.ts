@@ -4,60 +4,25 @@ function getBackendBase() {
   return (
     process.env.INTERNAL_BACKEND_URL ??
     process.env.NEXT_PUBLIC_API_BASE_URL ??
-    "http://backend:3000"
+    "http://localhost:3001"
   );
 }
 
-export async function GET(
-  req: Request,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const backend = getBackendBase();
-    const url = `${backend}/projects/${params.id}`;
-
-    const res = await fetch(url, { cache: "no-store" });
-    const text = await res.text();
-
-    // 백엔드의 content-type을 최대한 유지
-    const contentType = res.headers.get("content-type") ?? "application/json";
-
-    // 상태코드/바디 그대로 전달
-    return new NextResponse(text, {
-      status: res.status,
-      headers: { "content-type": contentType },
-    });
-  } catch (e) {
-    // 프록시 자체가 실패한 경우(주소 문제 등)
-    return NextResponse.json(
-      {
-        error: "Proxy failed",
-        detail: String(e),
-        backendBase: getBackendBase(),
-        hint:
-          "docker 환경에서는 INTERNAL_BACKEND_URL=http://backend:3000 설정이 필요합니다.",
-      },
-      { status: 500 }
-    );
-  }
+function joinUrl(base: string, path: string) {
+  const b = base.endsWith("/") ? base.slice(0, -1) : base;
+  const p = path.startsWith("/") ? path : `/${path}`;
+  return `${b}${p}`;
 }
 
-export async function DELETE(
-  req: Request,
-  { params }: { params: { id: string } }
-) {
+export async function GET(req: Request) {
   try {
     const backend = getBackendBase();
-    const url = `${backend}/projects/${params.id}`;
+    const url = new URL(req.url);
 
-    // 쿠키 기반 인증이 붙을 수 있으니 쿠키 전달(없으면 빈 값)
-    const cookie = req.headers.get("cookie") ?? "";
+    const target = joinUrl(backend, `/projects/list${url.search}`);
 
-    const res = await fetch(url, {
-      method: "DELETE",
-      headers: {
-        ...(cookie ? { cookie } : {}),
-      },
+    const res = await fetch(target, {
+      method: "GET",
       cache: "no-store",
     });
 
@@ -70,11 +35,38 @@ export async function DELETE(
     });
   } catch (e) {
     return NextResponse.json(
-      {
-        error: "Proxy failed",
-        detail: String(e),
-        backendBase: getBackendBase(),
+      { error: "Proxy failed", detail: String(e) },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const backend = getBackendBase();
+    const target = joinUrl(backend, "/projects");
+
+    const body = await req.text();
+
+    const res = await fetch(target, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
       },
+      body,
+      cache: "no-store",
+    });
+
+    const text = await res.text();
+    const contentType = res.headers.get("content-type") ?? "application/json";
+
+    return new NextResponse(text, {
+      status: res.status,
+      headers: { "content-type": contentType },
+    });
+  } catch (e) {
+    return NextResponse.json(
+      { error: "Proxy failed", detail: String(e) },
       { status: 500 }
     );
   }

@@ -1,11 +1,15 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useEffect } from "react";
+import { useI18n } from "@/lib/i18n";
 import CommunityWriteClient from "./CommunityWriteClient";
 
-export const metadata: Metadata = {
-  title: "글쓰기 | Sync Up",
-  description: "커뮤니티 글 작성 페이지",
-};
+export default function CommunityNewPage() {
+  const { tr, lang } = useI18n();
 
-export default function CommunityWritePage() {
+  useEffect(() => {
+    document.title = tr("커뮤니티 글쓰기 | Sync Up", "コミュニティ 投稿 | Sync Up");
+  }, [lang, tr]);
+
   return <CommunityWriteClient />;
 }

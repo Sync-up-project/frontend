@@ -3,10 +3,11 @@
 import { Globe } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { clearAccessToken, getAccessToken, getCurrentUser } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
+import { normalizeDisplayUser, getLanguageBadge } from "@/lib/userDisplay";
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -14,10 +15,12 @@ function cn(...classes: Array<string | false | null | undefined>) {
 
 export default function Header() {
   const pathname = usePathname();
+  const router = useRouter();
   const { lang, setLang, tr } = useI18n();
 
   const [isAuthed, setIsAuthed] = useState(false);
-  const [nickname, setNickname] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   const navItems = useMemo(
     () => [
@@ -29,121 +32,132 @@ export default function Header() {
     [tr]
   );
 
-  const isActive = (href: string) => {
-    if (href === "/") return pathname === "/";
-    return pathname === href || pathname.startsWith(`${href}/`);
-  };
+  useEffect(() => {
+    let mounted = true;
 
-  function loadMe() {
-    const token = getAccessToken();
-    if (!token) {
-      setIsAuthed(false);
-      setNickname(null);
-      return;
+    async function refreshAuth() {
+      try {
+        const token = getAccessToken();
+        if (!token) {
+          if (!mounted) return;
+          setIsAuthed(false);
+          setDisplayName(null);
+          setAvatarUrl(null);
+          return;
+        }
+
+        const me = await getCurrentUser();
+        if (!mounted) return;
+
+        const du = normalizeDisplayUser(me);
+        setDisplayName(du?.displayName ?? null);
+        setAvatarUrl(du?.avatarUrl ?? null);
+        setIsAuthed(true);
+      } catch {
+        if (!mounted) return;
+        setIsAuthed(false);
+        setDisplayName(null);
+        setAvatarUrl(null);
+      }
     }
 
-    setIsAuthed(true);
-
-    const cached = getCurrentUser();
-    setNickname(cached?.nickname ?? null);
-  }
-
-  function onLogout() {
-    clearAccessToken();
-    setIsAuthed(false);
-    setNickname(null);
-    window.location.href = "/";
-  }
-
-  useEffect(() => {
-    loadMe();
-
-    const onAuthChanged = () => loadMe();
-    const onStorage = () => loadMe();
-
-    window.addEventListener("auth:changed", onAuthChanged);
-    window.addEventListener("storage", onStorage);
+    refreshAuth();
 
     return () => {
-      window.removeEventListener("auth:changed", onAuthChanged);
-      window.removeEventListener("storage", onStorage);
+      mounted = false;
     };
-  }, []);
+  }, [pathname]);
+
+  async function onLogout() {
+    try {
+      clearAccessToken();
+    } finally {
+      setIsAuthed(false);
+      setDisplayName(null);
+      setAvatarUrl(null);
+      router.push("/login");
+      router.refresh();
+    }
+  }
 
   return (
-    <header className="fixed top-0 left-0 right-0 h-20 bg-white/80 backdrop-blur-sm z-50 border-b border-gray-200">
-      <div className="max-w-7xl mx-auto px-6 h-20">
-        <div className="flex items-center gap-6 h-20">
-          {/* Logo */}
-          <Link href="/" prefetch={false} className="flex items-center gap-2 shrink-0">
-            <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-blue-500 rounded-lg flex items-center justify-center">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <circle cx="10" cy="10" r="8" stroke="white" strokeWidth="2" />
-                <path
-                  d="M10 6v8M6 10h8"
-                  stroke="white"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-              </svg>
+    <header className="w-full border-b bg-white">
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
+        {/* Left */}
+        <div className="flex items-center gap-8">
+          <Link href="/" className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600 text-white">
+              +
             </div>
-            <span className="font-semibold text-gray-900">Sync Up</span>
+            <span className="text-lg font-bold">Sync Up</span>
           </Link>
 
-          {/* Nav */}
-          <nav className="flex items-center gap-6">
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                prefetch={false} // ✅ 자동 prefetch로 인한 불필요한 API 호출(404 폭발) 방지
-                className={cn(
-                  "text-sm font-medium transition-colors",
-                  isActive(item.href)
-                    ? "text-gray-900"
-                    : "text-gray-500 hover:text-gray-900"
-                )}
-              >
-                {item.label}
-              </Link>
-            ))}
+          <nav className="hidden items-center gap-6 md:flex">
+            {navItems.map((item) => {
+              const active =
+                pathname === item.href || pathname?.startsWith(item.href + "/");
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "text-sm text-zinc-600 hover:text-zinc-900",
+                    active && "font-semibold text-zinc-900"
+                  )}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
           </nav>
+        </div>
 
-          <div className="ml-auto flex items-center gap-3">
-            {/* Language Switch */}
-            <button
-              type="button"
-              className="inline-flex items-center justify-center w-9 h-9 rounded-lg hover:bg-gray-100 transition-colors"
-              onClick={() => setLang(lang === "KO" ? "JP" : "KO")}
-              aria-label="toggle language"
-              title={lang === "KO" ? "日本語" : "한국어"}
-            >
-              <Globe className="w-5 h-5 text-gray-600" />
-            </button>
+        {/* Right */}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
+            onClick={() => setLang(lang === "ko" ? "ja" : "ko")}
+            aria-label="language"
+          >
+            <Globe className="h-4 w-4" />
+            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs">
+              {lang === "ko" ? "KO" : "JA"}
+            </span>
+          </button>
 
-            <div className="flex items-center gap-2 text-sm text-gray-700">
-              <span className="px-2 py-1 rounded-md bg-gray-100">{lang}</span>
-              {nickname ? <span>{nickname}님</span> : null}
-            </div>
+          {isAuthed ? (
+            <>
+              {/* 아바타(있으면) + 이름 */}
+              <div className="flex items-center gap-2 rounded-full bg-zinc-100 px-3 py-1.5 text-sm text-zinc-800">
+                {avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={avatarUrl}
+                    alt="avatar"
+                    className="h-6 w-6 rounded-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : null}
+                <span>{displayName ? `${displayName}님` : tr("로그인됨", "ログイン中")}</span>
+              </div>
 
-            {isAuthed ? (
               <button
                 type="button"
                 onClick={onLogout}
-                className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors"
+                className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
               >
-                로그아웃
+                {tr("로그아웃", "ログアウト")}
               </button>
-            ) : (
-              <Link
-                href="/login"
-                prefetch={false}
-                className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors"
-              >
-                로그인
-              </Link>
-            )}
-          </div>
+            </>
+          ) : (
+            <Link
+              href="/login"
+              className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+            >
+              {tr("로그인", "ログイン")}
+            </Link>
+          )}
         </div>
       </div>
     </header>

@@ -1,15 +1,31 @@
-// src/app/login/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
-import { login, getAccessToken } from "@/lib/auth";
+import { login, getAccessToken, getCurrentUser } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function getBackendBaseUrl(): string {
+  return process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
+}
+
+function GithubIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={className}
+      fill="currentColor"
+    >
+      <path d="M12 .5C5.73.5.75 5.6.75 12.1c0 5.2 3.44 9.6 8.2 11.16.6.12.82-.27.82-.6 0-.3-.01-1.1-.02-2.16-3.34.75-4.04-1.66-4.04-1.66-.54-1.42-1.33-1.8-1.33-1.8-1.09-.77.08-.76.08-.76 1.2.09 1.83 1.28 1.83 1.28 1.07 1.9 2.8 1.35 3.49 1.03.11-.8.42-1.35.76-1.66-2.67-.32-5.47-1.38-5.47-6.12 0-1.35.46-2.45 1.22-3.32-.12-.32-.53-1.62.12-3.38 0 0 1.01-.33 3.3 1.27.96-.27 1.98-.4 3-.4s2.04.14 3 .4c2.29-1.6 3.3-1.27 3.3-1.27.65 1.76.24 3.06.12 3.38.76.87 1.22 1.97 1.22 3.32 0 4.76-2.8 5.8-5.48 6.11.43.39.82 1.16.82 2.34 0 1.69-.02 3.05-.02 3.46 0 .33.22.73.83.6 4.75-1.56 8.18-5.96 8.18-11.16C23.25 5.6 18.27.5 12 .5z" />
+    </svg>
+  );
 }
 
 export default function LoginPage() {
@@ -18,11 +34,13 @@ export default function LoginPage() {
   const { tr } = useI18n();
 
   const next = searchParams.get("next") || "/projects";
+  const oauth = searchParams.get("oauth"); // success | failed | null
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
+  const [oauthChecking, setOauthChecking] = useState(false);
   const [error, setError] = useState<string>("");
 
   // 이미 로그인 되어 있으면 바로 이동
@@ -31,6 +49,63 @@ export default function LoginPage() {
     if (token) router.replace(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // OAuth로 돌아왔을 때 처리
+  useEffect(() => {
+    let mounted = true;
+
+    async function handleOAuthReturn() {
+      if (!oauth) return;
+
+      if (oauth === "failed") {
+        setError(
+          tr(
+            "GitHub 로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+            "GitHubログインに失敗しました。しばらくしてから再度お試しください。"
+          )
+        );
+        return;
+      }
+
+      if (oauth === "success") {
+        setOauthChecking(true);
+        setError("");
+        try {
+          const me = await getCurrentUser();
+          if (!mounted) return;
+
+          if (me) {
+            router.replace(next);
+            return;
+          }
+
+          setError(
+            tr(
+              "GitHub 로그인은 완료되었지만 사용자 정보를 확인할 수 없습니다. 다시 로그인해 주세요.",
+              "GitHubログインは完了しましたが、ユーザー情報を確認できません。再度ログインしてください。"
+            )
+          );
+        } catch {
+          if (!mounted) return;
+          setError(
+            tr(
+              "GitHub 로그인 후 세션 확인에 실패했습니다. 백엔드 상태를 확인해 주세요.",
+              "GitHubログイン後のセッション確認に失敗しました。バックエンドの状態をご確認ください。"
+            )
+          );
+        } finally {
+          if (!mounted) return;
+          setOauthChecking(false);
+        }
+      }
+    }
+
+    handleOAuthReturn();
+
+    return () => {
+      mounted = false;
+    };
+  }, [oauth, next, router, tr]);
 
   const canSubmit = useMemo(() => {
     if (!isValidEmail(email.trim())) return false;
@@ -43,7 +118,12 @@ export default function LoginPage() {
     setError("");
 
     if (!canSubmit) {
-      setError(tr("이메일/비밀번호를 확인해 주세요.", "メール/パスワードをご確認ください。"));
+      setError(
+        tr(
+          "이메일/비밀번호를 확인해 주세요.",
+          "メール/パスワードをご確認ください。"
+        )
+      );
       return;
     }
 
@@ -56,11 +136,27 @@ export default function LoginPage() {
 
       router.replace(next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : tr("로그인에 실패했습니다.", "ログインに失敗しました。"));
+      setError(
+        err instanceof Error
+          ? err.message
+          : tr("로그인에 실패했습니다.", "ログインに失敗しました。")
+      );
     } finally {
       setSubmitting(false);
     }
   }
+
+  function onGithubLogin() {
+    setError("");
+
+    const backend = getBackendBaseUrl();
+    const url = new URL(`${backend}/auth/github`);
+    url.searchParams.set("next", next);
+
+    window.location.href = url.toString();
+  }
+
+  const isBusy = submitting || oauthChecking;
 
   return (
     <div className="min-h-screen pt-20 bg-gradient-to-b from-gray-50 via-white to-gray-100 relative overflow-hidden">
@@ -104,6 +200,7 @@ export default function LoginPage() {
                   placeholder={tr("user@test.com", "user@test.com")}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-300"
                   autoComplete="email"
+                  disabled={isBusy}
                 />
               </div>
 
@@ -115,9 +212,13 @@ export default function LoginPage() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder={tr("비밀번호를 입력해 주세요", "パスワードを入力してください")}
+                  placeholder={tr(
+                    "비밀번호를 입력해 주세요",
+                    "パスワードを入力してください"
+                  )}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-300"
                   autoComplete="current-password"
+                  disabled={isBusy}
                 />
               </div>
 
@@ -127,18 +228,48 @@ export default function LoginPage() {
                 </div>
               ) : null}
 
+              {/* ✅ 검정 로그인 버튼 */}
               <button
                 type="submit"
-                disabled={!canSubmit || submitting}
+                disabled={!canSubmit || submitting || oauthChecking}
                 className={[
                   "w-full py-3 rounded-lg transition-colors font-medium",
-                  !canSubmit || submitting
+                  !canSubmit || submitting || oauthChecking
                     ? "bg-gray-500 text-white cursor-not-allowed"
                     : "bg-gray-900 text-white hover:bg-gray-800",
                 ].join(" ")}
               >
-                {submitting ? tr("로그인 중...", "ログイン中...") : tr("로그인", "ログイン")}
+                {submitting
+                  ? tr("로그인 중...", "ログイン中...")
+                  : tr("로그인", "ログイン")}
               </button>
+
+              {/* ✅ GitHub 로그인 버튼: 검정 로그인 버튼 아래 */}
+              <button
+                type="button"
+                onClick={onGithubLogin}
+                disabled={isBusy}
+                className={[
+                  "w-full py-3 rounded-lg transition-colors font-medium border flex items-center justify-center gap-2",
+                  isBusy
+                    ? "bg-gray-100 text-gray-500 cursor-not-allowed border-gray-200"
+                    : "bg-white text-gray-900 hover:bg-gray-50 border-gray-300",
+                ].join(" ")}
+              >
+                <GithubIcon className="h-5 w-5" />
+                {oauthChecking
+                  ? tr("GitHub 로그인 확인 중...", "GitHubログイン確認中...")
+                  : tr("GitHub로 로그인", "GitHubでログイン")}
+              </button>
+
+              <div className="pt-1">
+                <p className="text-xs text-gray-500">
+                  {tr(
+                    "GitHub OAuth는 백엔드 구현 완료 후 정상 동작합니다. (지금은 버튼/흐름만 준비)",
+                    "GitHub OAuthはバックエンド実装完了後に正常動作します。（現在はボタン/フローのみ準備）"
+                  )}
+                </p>
+              </div>
 
               <div className="flex items-center justify-between pt-2">
                 <Link href="/signup" className="text-sm text-gray-700 hover:underline">
@@ -150,12 +281,11 @@ export default function LoginPage() {
                 </Link>
               </div>
 
-              {/* OAuth는 아직 미구현이므로 UI만 둡니다 */}
-              <div className="pt-4">
+              <div className="pt-2">
                 <p className="text-xs text-gray-500">
                   {tr(
-                    "OAuth 로그인은 백엔드 구현 완료 후 연결됩니다.",
-                    "OAuthログインはバックエンド実装完了後に接続されます。"
+                    "문제 발생 시: 백엔드가 /auth/github, /auth/github/callback, /auth/me 를 제공하는지 확인해 주세요.",
+                    "問題が発生した場合: バックエンドが /auth/github, /auth/github/callback, /auth/me を提供しているかご確認ください。"
                   )}
                 </p>
               </div>

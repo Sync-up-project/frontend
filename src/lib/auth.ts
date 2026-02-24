@@ -1,31 +1,43 @@
 // src/lib/auth.ts
 
-type LoginRequest = {
+export type LoginRequest = {
   email: string;
   password: string;
 };
 
-type SessionUser = {
+export type SessionUser = {
   id: string; // ✅ Prisma/백엔드 ID는 보통 string
   nickname: string;
   email?: string;
   role?: string;
   profileImageUrl?: string | null;
+
+  // (선택) GitHub 확장 대비
+  github?: {
+    isConnected?: boolean;
+    username?: string;
+    url?: string;
+    avatarUrl?: string;
+  };
+
+  githubUsername?: string;
+  githubUrl?: string;
+  githubAvatarUrl?: string;
 };
 
-type LoginResponse = {
+export type LoginResponse = {
   accessToken: string;
   expiresIn?: number;
   user?: SessionUser;
 };
 
-type SignupRequest = {
+export type SignupRequest = {
   email: string;
   password: string;
   nickname: string;
 };
 
-type SignupResponse = {
+export type SignupResponse = {
   accessToken: string;
   expiresIn?: number;
   user?: SessionUser;
@@ -76,6 +88,10 @@ export function saveCurrentUser(user: SessionUser): void {
   notifyAuthChanged();
 }
 
+/**
+ * ✅ 기존 동작 유지: 로컬 캐시(SessionUser)만 읽음
+ * - "진짜 DB 유저"가 필요하면 fetchCurrentUser() 사용
+ */
 export function getCurrentUser(): SessionUser | null {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(SESSION_USER_KEY);
@@ -110,9 +126,66 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promi
 }
 
 /**
+ * ✅ 핵심 추가: 백엔드에서 현재 로그인 유저(/auth/me)를 Bearer로 가져오기
+ * - 성공하면 로컬 캐시(SESSION_USER_KEY) 갱신
+ */
+export async function fetchCurrentUser(): Promise<SessionUser> {
+  const token = getAccessToken();
+  if (!token) throw new Error("인증 토큰이 없습니다.");
+
+  const url = `${getApiBaseUrl()}/auth/me`;
+
+  const data = await fetchJson<any>(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+    },
+    cache: "no-store",
+    credentials: "include",
+  });
+
+  // { user: {...} } or {...}
+  const u = data?.user ?? data ?? {};
+
+  const normalized: SessionUser = {
+    id: String(u?.id ?? ""),
+    nickname: String(u?.nickname ?? u?.name ?? u?.username ?? ""),
+    email: typeof u?.email === "string" ? u.email : undefined,
+    role: typeof u?.role === "string" ? u.role : undefined,
+    profileImageUrl:
+      (u?.profileImageUrl ??
+        u?.profile_image_url ??
+        u?.githubAvatarUrl ??
+        u?.avatarUrl ??
+        u?.github?.avatarUrl ??
+        null) as string | null,
+
+    github: u?.github
+      ? {
+          isConnected: Boolean(u.github.isConnected),
+          username: typeof u.github.username === "string" ? u.github.username : undefined,
+          url: typeof u.github.url === "string" ? u.github.url : undefined,
+          avatarUrl: typeof u.github.avatarUrl === "string" ? u.github.avatarUrl : undefined,
+        }
+      : undefined,
+
+    githubUsername: typeof u?.githubUsername === "string" ? u.githubUsername : undefined,
+    githubUrl: typeof u?.githubUrl === "string" ? u.githubUrl : undefined,
+    githubAvatarUrl: typeof u?.githubAvatarUrl === "string" ? u.githubAvatarUrl : undefined,
+  };
+
+  if (!normalized.id || !normalized.nickname) {
+    throw new Error("유저 정보를 불러왔지만 필수 필드(id/nickname)가 비어있습니다.");
+  }
+
+  saveCurrentUser(normalized);
+  return normalized;
+}
+
+/**
  * 닉네임 중복 확인
- * - 백엔드가 제공하는 경우에만 검증합니다.
- * - 백엔드가 미구현/오류면 UX를 막지 않기 위해 true(사용 가능)로 처리
+ * - 백엔드 미구현이면 UX를 막지 않기 위해 true(사용 가능)로 처리
  */
 export async function checkNicknameAvailable(nickname: string): Promise<boolean> {
   const trimmed = nickname.trim();
@@ -123,7 +196,6 @@ export async function checkNicknameAvailable(nickname: string): Promise<boolean>
   try {
     const res = await fetch(url, { method: "GET" });
 
-    // 중복을 409로 내리는 서버도 있어서 우선 처리
     if (res.status === 409) return false;
 
     if (res.ok) {
@@ -139,6 +211,7 @@ export async function checkNicknameAvailable(nickname: string): Promise<boolean>
       return true;
     }
 
+    // 404/500 등은 “검증 불가 → 일단 통과”
     return true;
   } catch {
     return true;
@@ -152,12 +225,17 @@ export async function login(payload: LoginRequest): Promise<LoginResponse> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-    // refresh 쿠키까지 쓰게 되면 필요할 수 있어요.
-    // credentials: "include",
   });
 
   if (res?.accessToken) saveAccessToken(res.accessToken);
   if (res?.user) saveCurrentUser(res.user);
+
+  // ✅ 가능하면 /auth/me로 최신 유저정보 동기화 (실패해도 로그인은 유지)
+  try {
+    await fetchCurrentUser();
+  } catch {
+    // ignore
+  }
 
   return res;
 }
@@ -169,13 +247,17 @@ export async function signup(payload: SignupRequest): Promise<SignupResponse> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-    // refresh 쿠키까지 쓰게 되면 필요할 수 있어요.
-    // credentials: "include",
   });
 
-  // ✅ 회원가입 직후에도 로그인 상태가 되도록 토큰/유저 저장
   if (res?.accessToken) saveAccessToken(res.accessToken);
   if (res?.user) saveCurrentUser(res.user);
+
+  // ✅ 가능하면 /auth/me로 최신 유저정보 동기화
+  try {
+    await fetchCurrentUser();
+  } catch {
+    // ignore
+  }
 
   return res;
 }
@@ -189,6 +271,7 @@ export async function authedGet<T>(path: string): Promise<T> {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
+    credentials: "include",
   });
 }
 
@@ -231,3 +314,14 @@ export async function verifyEmailCode(payload: { email: string; code: string }):
     body: JSON.stringify(payload),
   });
 }
+
+/**
+ * ✅ 빌드에서 "not exported"가 뜨는 경우를 확실히 막기 위한 재-export(안전장치)
+ * (중복 export여도 문제 없음)
+ */
+export {
+  clearAccessToken as __clearAccessToken_export_guard,
+  login as __login_export_guard,
+  signup as __signup_export_guard,
+  checkNicknameAvailable as __checkNickname_export_guard,
+};
