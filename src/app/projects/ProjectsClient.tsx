@@ -35,8 +35,7 @@ function mapPositionNeedsToDevPosition(
 ): DevPosition {
   const pos = new Set((positionNeeds ?? []).map((p) => (p.position ?? "").toUpperCase()));
 
-  // 현재 UI 필터(DevPosition)가 frontend/backend/fullstack/all 중 하나로 보이는 구조라,
-  // 임시 매핑: DEV만 있으면 backend, DESIGN만 있으면 frontend, 둘 다면 fullstack
+  // 임시 매핑(기존 UI 필터에 맞춤)
   if (pos.has("DEV") && pos.has("DESIGN")) return "fullstack";
   if (pos.has("DEV")) return "backend";
   if (pos.has("DESIGN")) return "frontend";
@@ -56,6 +55,40 @@ function clamp(n: number, min: number, max: number) {
 function safeTechNames(techStacks: TechStack[] | undefined) {
   return (techStacks ?? []).map((t) => normalizeTechName(t.name)).filter(Boolean);
 }
+
+function sumHeadcount(positionNeeds: any[] | undefined): number {
+  const arr = positionNeeds ?? [];
+  return arr.reduce((acc, cur) => {
+    const n = Number(cur?.headcount ?? cur?.count ?? 0);
+    return acc + (Number.isFinite(n) ? n : 0);
+  }, 0);
+}
+
+/**
+ * ✅ 백엔드 응답이 items 기반(스크린샷)인데,
+ * 프론트 타입/구현이 project 기반인 경우가 섞여 있을 수 있어
+ * items / project 둘 다 대응합니다.
+ */
+function pickArray<T = any>(res: any): T[] {
+  const items = res?.items;
+  const project = res?.project;
+
+  if (Array.isArray(items)) return items as T[];
+  if (Array.isArray(project)) return project as T[];
+  return [];
+}
+
+/**
+ * ✅ 추천/찜 엔드포인트가 아직 백엔드에 없어서(404) 네트워크 에러가 계속 뜨는 상태라면
+ * 아래 플래그를 켜기 전까지는 호출을 막아두는 편이 개발 경험이 좋습니다.
+ *
+ * - 백엔드가 /projects/recommend, /projects/wishlist 구현되면 true로 바꾸거나
+ * - NEXT_PUBLIC_ENABLE_PROJECT_SIDE_API=true 환경변수를 설정하세요.
+ */
+const ENABLE_PROJECT_SIDE_API =
+  typeof process !== "undefined"
+    ? process.env.NEXT_PUBLIC_ENABLE_PROJECT_SIDE_API === "true"
+    : false;
 
 export default function ProjectsClient() {
   const { tr } = useI18n();
@@ -97,18 +130,36 @@ export default function ProjectsClient() {
       try {
         const res: ProjectListResponse = await apiGetProjectsList();
 
-        const mapped: ProjectItem[] = (res?.project ?? []).map((p) => {
-          const tags = safeTechNames(p.techStacks);
-          const position = mapPositionNeedsToDevPosition(p.positionNeeds);
+        // ✅ 핵심 수정: res.project가 아니라 res.items(또는 project) 배열을 꺼내서 맵핑
+        const raw = pickArray<any>(res);
+
+        const mapped: ProjectItem[] = raw.map((p) => {
+          const tags = safeTechNames(p?.techStacks);
+          const position = mapPositionNeedsToDevPosition(p?.positionNeeds);
+
+          const currentCount = Number(
+            p?.membersCount ?? p?.members_count ?? p?.members ?? p?.membersCountCurrent ?? 0
+          );
+
+          // 백엔드 스크린샷 기준 capacity가 전체 모집 인원처럼 보이므로 우선순위 높게
+          const totalCount = Number(
+            p?.capacity ??
+              p?.membersCountMax ??
+              p?.members_max ??
+              p?.maxMembers ??
+              sumHeadcount(p?.positionNeeds) ??
+              0
+          );
 
           return {
-            id: String(p.id),
-            title: String(p.title),
-            description: String(p.summary ?? ""),
+            id: String(p?.id ?? ""),
+            // 스펙에 따라 titleOriginal/summaryOriginal 같이 올 수도 있어서 폭넓게 대응
+            title: String(p?.titleOriginal ?? p?.title ?? ""),
+            description: String(p?.summaryOriginal ?? p?.summary ?? p?.descriptionOriginal ?? ""),
             position,
             tags,
-            currentCount: Number(p.membersCount ?? 0),
-            totalCount: Number(p.membersCountMax ?? 0),
+            currentCount: Number.isFinite(currentCount) ? currentCount : 0,
+            totalCount: Number.isFinite(totalCount) ? totalCount : 0,
           };
         });
 
@@ -142,6 +193,13 @@ export default function ProjectsClient() {
         return;
       }
 
+      // ✅ 백엔드 엔드포인트가 없는 상태(404)면 아예 호출하지 않도록
+      if (!ENABLE_PROJECT_SIDE_API) {
+        setRecommended([]);
+        setBookmarked([]);
+        return;
+      }
+
       setLoadingSide(true);
       try {
         const [rec, wish]: [ProjectRecommendResponse, ProjectWishlistResponse] =
@@ -149,24 +207,24 @@ export default function ProjectsClient() {
 
         if (!mounted) return;
 
-        const recTags = safeTechNames(rec?.techStacks);
-        const wishTags = safeTechNames(wish?.techStacks);
+        const recProjects = pickArray<any>(rec);
+        const wishProjects = pickArray<any>(wish);
 
         setRecommended(
-          (rec?.project ?? []).map((p) => ({
-            id: String(p.id),
-            title: String(p.title),
-            membersText: "", // 응답에 인원 정보가 없어서 비워둠(스펙 추가되면 채우기)
-            tags: recTags,
+          recProjects.map((p) => ({
+            id: String(p?.id ?? ""),
+            title: String(p?.titleOriginal ?? p?.title ?? ""),
+            membersText: "",
+            tags: safeTechNames(p?.techStacks),
           }))
         );
 
         setBookmarked(
-          (wish?.project ?? []).map((p) => ({
-            id: String(p.id),
-            title: String(p.title),
+          wishProjects.map((p) => ({
+            id: String(p?.id ?? ""),
+            title: String(p?.titleOriginal ?? p?.title ?? ""),
             membersText: "",
-            tags: wishTags,
+            tags: safeTechNames(p?.techStacks),
           }))
         );
       } catch {
@@ -194,11 +252,8 @@ export default function ProjectsClient() {
   const filteredAll: ProjectItem[] = useMemo(() => {
     return list.filter((p) => {
       const posOk = filters.position === "all" ? true : p.position === filters.position;
-
-      // 현재 API 스펙상 tags는 techStacks 기반이라 tools 필터는 당장은 의미가 약함
       const stacksOk = includesAll(p.tags, filters.stacks);
       const toolsOk = includesAll(p.tags, filters.tools);
-
       return posOk && stacksOk && toolsOk;
     });
   }, [list, filters.position, filters.stacks, filters.tools]);

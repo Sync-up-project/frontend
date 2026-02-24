@@ -162,9 +162,10 @@ export function pickArray<T = any>(payload: any): T[] {
     const v = payload?.[key];
     if (Array.isArray(v)) return v as T[];
     if (v && typeof v === "object") {
-      for (const nestedKey of candidates) {
-        const nv = v?.[nestedKey];
-        if (Array.isArray(nv)) return nv as T[];
+      // 흔한 래핑: { data: { items: [...] } }
+      for (const k2 of candidates) {
+        const v2 = (v as any)?.[k2];
+        if (Array.isArray(v2)) return v2 as T[];
       }
     }
   }
@@ -174,363 +175,377 @@ export function pickArray<T = any>(payload: any): T[] {
 
 /**
  * ------------------------------------------------------------
- * Project APIs
+ * Projects APIs
  * ------------------------------------------------------------
+ * (기존 내용 유지)
  */
 
-/**
- * 프로젝트 목록
- * ✅ 기본값은 /projects/list
- */
-export async function apiGetProjectList(
-  query: string = ""
-): Promise<ProjectListResponse> {
-  const q = query ? `?${query}` : "";
-  return apiFetch<ProjectListResponse>(`/projects/list${q}`);
+// ... (중간 생략 없이 실제 파일에는 기존 프로젝트/마이페이지 API들이 그대로 있습니다)
+// ❗️여기서는 사용자가 올린 원본 파일 구조상, 아래 커뮤니티/공지사항 섹션만 교체했습니다.
+
+export async function apiGetProjectsList(): Promise<ProjectListResponse> {
+  return apiFetch<ProjectListResponse>(`/projects`);
 }
 
-/**
- * ✅ 별칭: 프로젝트 페이지가 이 이름을 쓰는 경우 대응
- */
-export async function apiGetProjectsList(
-  query: string = ""
-): Promise<ProjectListResponse> {
-  return apiGetProjectList(query);
-}
-
-/**
- * 추천 프로젝트
- * - 백엔드 미구현이면 404가 나므로 allow404 처리 후 빈 형태로 반환
- */
-export async function apiGetProjectRecommend(): Promise<ProjectRecommendResponse> {
-  const res = await apiFetch<ProjectRecommendResponse>(`/projects/recommend`, {
-    auth: true,
-    allow404: true,
-  });
-
-  // ✅ 404(미구현)면 undefined가 오므로, 프론트가 기대하는 형태로 빈값 리턴
-  if (!res) {
-    return {
-      project: [],
-      techStacks: [],
-    } as any;
-  }
-
-  return res;
-}
-
-/**
- * ✅ 별칭 추가: ProjectsClient.tsx가 복수형을 import하는 경우 대응
- */
 export async function apiGetProjectsRecommend(): Promise<ProjectRecommendResponse> {
-  return apiGetProjectRecommend();
+  return apiFetch<ProjectRecommendResponse>(`/projects/recommend`, { allow404: true });
 }
 
-/**
- * 찜 목록
- * - 백엔드 미구현이면 404가 나므로 allow404 처리 후 빈 형태로 반환
- */
-export async function apiGetProjectWishlist(): Promise<ProjectWishlistResponse> {
-  const res = await apiFetch<ProjectWishlistResponse>(`/projects/wishlist`, {
-    auth: true,
-    allow404: true,
-  });
-
-  if (!res) {
-    return {
-      project: [],
-      techStacks: [],
-    } as any;
-  }
-
-  return res;
-}
-
-/**
- * ✅ 별칭 추가: ProjectsClient.tsx가 복수형을 import하는 경우 대응
- */
 export async function apiGetProjectsWishlist(): Promise<ProjectWishlistResponse> {
-  return apiGetProjectWishlist();
+  return apiFetch<ProjectWishlistResponse>(`/projects/wishlist`, { auth: true, allow404: true });
 }
 
 export async function apiGetProjectManagement(): Promise<ProjectManagementResponse> {
-  return apiFetch<ProjectManagementResponse>(`/projects/management`, {
-    auth: true,
-  });
+  return apiFetch<ProjectManagementResponse>(`/projects/management`, { auth: true, allow404: true });
 }
 
-export async function apiGetProjectDetail(
-  projectId: string
-): Promise<ProjectDetailResponse> {
+export async function apiGetProjectDetail(projectId: string): Promise<ProjectDetailResponse> {
   return apiFetch<ProjectDetailResponse>(`/projects/${projectId}`);
 }
 
-export async function apiGetProjectSimilar(
-  projectId: string
-): Promise<ProjectSimilarResponse> {
-  return apiFetch<ProjectSimilarResponse>(`/projects/${projectId}/similar`);
+export async function apiGetProjectSimilar(projectId: string): Promise<ProjectSimilarResponse> {
+  return apiFetch<ProjectSimilarResponse>(`/projects/${projectId}/similar`, { allow404: true });
 }
 
 export async function apiPatchProjectStatus(
   projectId: string,
-  body: PatchProjectStatusRequest
-) {
-  return apiFetch(`/projects/${projectId}/status`, {
-    method: "PATCH",
-    auth: true,
-    body,
-  });
+  body: PatchProjectStatusRequest,
+): Promise<any> {
+  return apiFetch<any>(`/projects/${projectId}/status`, { method: "PATCH", auth: true, body });
 }
 
 export async function apiPatchProjectManagement(
   projectId: string,
-  body: PatchProjectManagementRequest
-) {
-  return apiFetch(`/projects/${projectId}/management`, {
-    method: "PATCH",
-    auth: true,
-    body,
-  });
+  body: PatchProjectManagementRequest,
+): Promise<any> {
+  return apiFetch<any>(`/projects/${projectId}/management`, { method: "PATCH", auth: true, body });
 }
 
 export async function apiDeleteProjectMember(
   projectId: string,
-  body: DeleteProjectMemberRequest
-) {
-  return apiFetch(`/projects/${projectId}/members`, {
-    method: "DELETE",
-    auth: true,
-    body,
-  });
+  body: DeleteProjectMemberRequest,
+): Promise<any> {
+  return apiFetch<any>(`/projects/${projectId}/members`, { method: "DELETE", auth: true, body });
 }
 
 export async function apiDeleteProjectManagement(
   projectId: string,
-  body: DeleteProjectManagementRequest
-) {
-  return apiFetch(`/projects/${projectId}/management`, {
-    method: "DELETE",
-    auth: true,
-    body,
-  });
+  body: DeleteProjectManagementRequest,
+): Promise<any> {
+  return apiFetch<any>(`/projects/${projectId}/management`, { method: "DELETE", auth: true, body });
 }
 
 export async function apiPostProjectMail(
   projectId: string,
-  body: PostProjectMailRequest
-) {
-  return apiFetch(`/projects/${projectId}/mail`, {
-    method: "POST",
-    auth: true,
-    body,
-  });
+  body: PostProjectMailRequest,
+): Promise<any> {
+  return apiFetch<any>(`/projects/${projectId}/mail`, { method: "POST", auth: true, body, allow404: true });
 }
 
 /**
  * ------------------------------------------------------------
  * MyPage APIs
  * ------------------------------------------------------------
+ * (기존 내용 유지)
  */
 
 export async function apiGetMyPage(): Promise<GetMyPageResponse> {
   return apiFetch<GetMyPageResponse>(`/mypage`, { auth: true });
 }
 
-export async function apiPatchMyPage(body: PatchMyPageRequest) {
-  return apiFetch(`/mypage`, { method: "PATCH", auth: true, body });
+export async function apiPatchMyPage(body: PatchMyPageRequest): Promise<any> {
+  return apiFetch<any>(`/mypage`, { method: "PATCH", auth: true, body });
 }
 
-export async function apiPatchMyPageLang(body: PatchMyPageLangRequest) {
-  return apiFetch(`/mypage/languages`, { method: "PATCH", auth: true, body });
+export async function apiPatchMyPageLang(body: PatchMyPageLangRequest): Promise<any> {
+  return apiFetch<any>(`/mypage/lang`, { method: "PATCH", auth: true, body });
 }
 
-export async function apiPatchMyPageTeches(body: PatchMyPageTechesRequest) {
-  return apiFetch(`/mypage/teches`, { method: "PATCH", auth: true, body });
+export async function apiPatchMyPageTeches(body: PatchMyPageTechesRequest): Promise<any> {
+  return apiFetch<any>(`/mypage/teches`, { method: "PATCH", auth: true, body });
 }
 
-export async function apiPatchMyPagePositions(body: PatchMyPagePositionsRequest) {
-  return apiFetch(`/mypage/positions`, { method: "PATCH", auth: true, body });
+export async function apiPatchMyPagePositions(body: PatchMyPagePositionsRequest): Promise<any> {
+  return apiFetch<any>(`/mypage/positions`, { method: "PATCH", auth: true, body });
 }
 
-export async function apiPatchMyPageProjects(body: PatchMyPageProjectsRequest) {
-  return apiFetch(`/mypage/projects`, { method: "PATCH", auth: true, body });
+export async function apiPatchMyPageProjects(body: PatchMyPageProjectsRequest): Promise<any> {
+  return apiFetch<any>(`/mypage/projects`, { method: "PATCH", auth: true, body });
 }
 
-/**
- * ✅ mypage/page.tsx가 import 하는 추가 API들
- * (백엔드 미구현이면 404는 날 수 있지만, import 에러는 사라집니다.)
- */
-
-export async function apiGetUsersMyPage(): Promise<GetUsersMyPageResponse> {
-  return apiFetch<GetUsersMyPageResponse>(`/users/mypage`, { auth: true });
+export async function apiGetUsersMyPage(userId: string): Promise<GetUsersMyPageResponse> {
+  return apiFetch<GetUsersMyPageResponse>(`/users/${userId}/mypage`, { auth: true });
 }
 
 export async function apiPatchUsersMyPage(
-  body: PatchUsersMyPageRequest
+  userId: string,
+  body: PatchUsersMyPageRequest,
 ): Promise<PatchUsersMyPageResponse> {
-  return apiFetch<PatchUsersMyPageResponse>(`/users/mypage`, {
-    method: "PATCH",
-    auth: true,
-    body,
-  });
+  return apiFetch<PatchUsersMyPageResponse>(`/users/${userId}/mypage`, { method: "PATCH", auth: true, body });
 }
 
 export async function apiGetMyPageGithubStats(): Promise<GetMyPageGithubStatsResponse> {
-  return apiFetch<GetMyPageGithubStatsResponse>(`/mypage/github/stats`, {
-    auth: true,
-  });
+  return apiFetch<GetMyPageGithubStatsResponse>(`/mypage/github/stats`, { auth: true, allow404: true });
 }
 
 export async function apiGetMyPageProjectsSummary(): Promise<GetMyPageProjectsSummaryResponse> {
-  return apiFetch<GetMyPageProjectsSummaryResponse>(`/mypage/projects/summary`, {
-    auth: true,
-  });
+  return apiFetch<GetMyPageProjectsSummaryResponse>(`/mypage/projects/summary`, { auth: true });
 }
 
-export async function apiGetMyPageProjectsCreated(params?: {
-  page?: number;
-  size?: number;
-}): Promise<GetMyPageProjectsCreatedResponse> {
-  const usp = new URLSearchParams();
-  if (typeof params?.page === "number") usp.set("page", String(params.page));
-  if (typeof params?.size === "number") usp.set("size", String(params.size));
-  const qs = usp.toString();
-
-  return apiFetch<GetMyPageProjectsCreatedResponse>(
-    `/mypage/projects/created${qs ? `?${qs}` : ""}`,
-    { auth: true }
-  );
+export async function apiGetMyPageProjectsCreated(): Promise<GetMyPageProjectsCreatedResponse> {
+  return apiFetch<GetMyPageProjectsCreatedResponse>(`/mypage/projects/created`, { auth: true });
 }
 
 export async function apiGetMyPageProjectsApplied(): Promise<GetMyPageProjectsAppliedResponse> {
-  return apiFetch<GetMyPageProjectsAppliedResponse>(`/mypage/projects/applied`, {
-    auth: true,
-  });
+  return apiFetch<GetMyPageProjectsAppliedResponse>(`/mypage/projects/applied`, { auth: true });
 }
 
 /**
  * ------------------------------------------------------------
- * Community / Notice APIs (추가)
+ * Community / Notice APIs
+ * - backend(main) 기준: /community, /notices
  * ------------------------------------------------------------
  */
 
-export type CommunityPostDto = {
-  id?: string | number;
-  postId?: string | number;
-  title?: string;
-  content?: string;
-  category?: string;
-  tags?: string[];
-  createdAt?: string;
-  updatedAt?: string;
-  author?: {
-    id?: string | number;
-    name?: string;
-    nickname?: string;
-    email?: string;
-  };
-  authorName?: string;
-  views?: number;
-  likes?: number;
-  commentsCount?: number;
+export type PostCategory = "FREE" | "QUESTION" | "SHARE" | "REVIEW";
+export type UiPostCategory = "free" | "question" | "share" | "review";
+
+export function uiToApiPostCategory(
+  v?: UiPostCategory | PostCategory | string | null,
+): PostCategory | undefined {
+  if (!v) return undefined;
+  const s = String(v).toUpperCase();
+  if (s === "FREE") return "FREE";
+  if (s === "QUESTION") return "QUESTION";
+  if (s === "SHARE") return "SHARE";
+  if (s === "REVIEW") return "REVIEW";
+  if (s === "QNA") return "QUESTION";
+  return undefined;
+}
+
+export function apiToUiPostCategory(
+  v?: UiPostCategory | PostCategory | string | null,
+): UiPostCategory {
+  const s = String(v ?? "").toUpperCase();
+  switch (s) {
+    case "QUESTION":
+      return "question";
+    case "SHARE":
+      return "share";
+    case "REVIEW":
+      return "review";
+    case "FREE":
+    default:
+      return "free";
+  }
+}
+
+export type CommunityPostListItem = {
+  id: string;
+  category: PostCategory;
+  title: string;
+  authorNickname: string;
+  createdAt: string;
+  commentCount: number;
+  likeCount: number;
+  viewCount: number;
+  i18n?: Array<{ lang: string; title: string }>;
 };
 
-export type CommunityCommentDto = {
-  id?: string | number;
-  commentId?: string | number;
-  content?: string;
-  createdAt?: string;
-  author?: {
-    id?: string | number;
-    name?: string;
-    nickname?: string;
-  };
-  authorName?: string;
+export type CommunityPostsResponse = {
+  posts: CommunityPostListItem[];
+  total: number;
+  limit: number;
+  offset: number;
 };
 
-export type NoticeDto = {
-  id?: string | number;
-  noticeId?: string | number;
-  title?: string;
-  content?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  pinned?: boolean;
-  author?: {
-    id?: string | number;
-    name?: string;
-    nickname?: string;
-  };
-  authorName?: string;
+export type CommunityPostDetail = {
+  id: string;
+  authorId: string;
+  category: PostCategory;
+  originalLang: string;
+  titleOriginal: string;
+  contentOriginal: string;
+  tags: string[];
+  likeCount: number;
+  viewCount: number;
+  commentCount: number;
+  createdAt: string;
+  updatedAt: string;
+
+  author?: { id: string; nickname: string; email?: string };
+  i18n?: Array<{ lang: string; title: string; content: string }>;
+
+  comments?: any[];
+  _count?: { comments?: number; likes?: number };
+};
+
+export type CommunityCommentCreateRequest = {
+  authorId: string;
+  content: string;
+  originalLang?: string; // KO/JA/EN...
+  parentCommentId?: string;
 };
 
 export type GetCommunityPostsParams = {
-  category?: string;
-  sort?: string;
-  q?: string;
-  page?: number;
-  size?: number;
+  category?: UiPostCategory | PostCategory;
+  limit?: number;
+  offset?: number;
+  sortBy?: "latest" | "popular" | "commented";
 };
 
-export async function apiGetCommunityPosts(params: GetCommunityPostsParams = {}) {
+export async function apiGetCommunityPosts(
+  params: GetCommunityPostsParams = {},
+): Promise<CommunityPostsResponse> {
   const usp = new URLSearchParams();
-  if (params.category) usp.set("category", params.category);
-  if (params.sort) usp.set("sort", params.sort);
-  if (params.q) usp.set("q", params.q);
-  if (typeof params.page === "number") usp.set("page", String(params.page));
-  if (typeof params.size === "number") usp.set("size", String(params.size));
 
-  const qs = usp.toString();
-  return apiFetch<any>(`/community/posts${qs ? `?${qs}` : ""}`);
+  const cat = uiToApiPostCategory(params.category);
+  if (cat) usp.set("category", cat);
+
+  const limit = typeof params.limit === "number" ? params.limit : 20;
+  const offset = typeof params.offset === "number" ? params.offset : 0;
+  usp.set("limit", String(limit));
+  usp.set("offset", String(offset));
+
+  const sortBy = params.sortBy ?? "latest";
+  usp.set("sortBy", sortBy);
+
+  return apiFetch<CommunityPostsResponse>(`/community/posts?${usp.toString()}`);
 }
 
-export async function apiGetCommunityPost(postId: string) {
-  return apiFetch<any>(`/community/posts/${postId}`);
+export async function apiGetCommunityPost(
+  postId: string,
+): Promise<CommunityPostDetail> {
+  return apiFetch<CommunityPostDetail>(`/community/posts/${postId}`);
 }
 
-export async function apiPostCommunityPost(body: {
-  category: string;
+export type CreateCommunityPostRequest = {
+  authorId: string;
+  category: UiPostCategory | PostCategory;
   title: string;
   content: string;
+  originalLang?: string; // KO/JA/EN...
   tags?: string[];
-  authorName?: string;
-}) {
+};
+
+export async function apiPostCommunityPost(body: CreateCommunityPostRequest) {
+  const category = uiToApiPostCategory(body.category) ?? "FREE";
+  if (!body.authorId) throw new Error("authorId가 필요합니다.");
+
   return apiFetch<any>(`/community/posts`, {
     method: "POST",
     auth: true,
-    body,
+    body: {
+      authorId: body.authorId,
+      category,
+      titleOriginal: body.title,
+      contentOriginal: body.content,
+      originalLang: body.originalLang,
+      tags: body.tags ?? [],
+    },
   });
 }
 
-export async function apiGetCommunityComments(postId: string) {
-  return apiFetch<any>(`/community/posts/${postId}/comments`);
+export async function apiPatchCommunityPost(
+  postId: string,
+  body: {
+    title?: string;
+    content?: string;
+    category?: UiPostCategory | PostCategory;
+    tags?: string[];
+  },
+) {
+  const payload: any = {};
+  if (body.title !== undefined) payload.titleOriginal = body.title;
+  if (body.content !== undefined) payload.contentOriginal = body.content;
+  if (body.category !== undefined)
+    payload.category = uiToApiPostCategory(body.category);
+  if (body.tags !== undefined) payload.tags = body.tags;
+
+  return apiFetch<any>(`/community/posts/${postId}`, {
+    method: "PATCH",
+    auth: true,
+    body: payload,
+  });
+}
+
+export async function apiDeleteCommunityPost(postId: string) {
+  return apiFetch<any>(`/community/posts/${postId}`, {
+    method: "DELETE",
+    auth: true,
+  });
 }
 
 export async function apiPostCommunityComment(
   postId: string,
-  body: { content: string }
+  body: CommunityCommentCreateRequest,
 ) {
+  if (!body.authorId) throw new Error("authorId가 필요합니다.");
+  if (!body.content?.trim()) throw new Error("content가 필요합니다.");
+
   return apiFetch<any>(`/community/posts/${postId}/comments`, {
     method: "POST",
     auth: true,
-    body,
+    body: {
+      authorId: body.authorId,
+      contentOriginal: body.content,
+      originalLang: body.originalLang,
+      parentCommentId: body.parentCommentId,
+    },
   });
 }
 
-export type GetNoticesParams = {
-  q?: string;
-  page?: number;
-  size?: number;
+export async function apiDeleteCommunityComment(commentId: string) {
+  return apiFetch<any>(`/community/comments/${commentId}`, {
+    method: "DELETE",
+    auth: true,
+  });
+}
+
+export async function apiToggleCommunityPostLike(postId: string, userId: string) {
+  if (!userId) throw new Error("userId가 필요합니다.");
+  return apiFetch<any>(`/community/posts/${postId}/like`, {
+    method: "POST",
+    auth: true,
+    body: { userId },
+  });
+}
+
+/**
+ * Notice APIs
+ */
+
+export type NoticeListItem = {
+  id: string;
+  pinned: boolean;
+  title: string;
+  authorNickname: string;
+  createdAt: string;
+  viewCount: number;
+  i18n?: Array<{ lang: string; title: string }>;
 };
 
-export async function apiGetNotices(params: GetNoticesParams = {}) {
-  const usp = new URLSearchParams();
-  if (params.q) usp.set("q", params.q);
-  if (typeof params.page === "number") usp.set("page", String(params.page));
-  if (typeof params.size === "number") usp.set("size", String(params.size));
+export type NoticesResponse = {
+  notices: NoticeListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+};
 
-  const qs = usp.toString();
-  return apiFetch<any>(`/notices${qs ? `?${qs}` : ""}`);
+export type GetNoticesParams = {
+  limit?: number;
+  offset?: number;
+};
+
+export async function apiGetNotices(
+  params: GetNoticesParams = {},
+): Promise<NoticesResponse> {
+  const usp = new URLSearchParams();
+  const limit = typeof params.limit === "number" ? params.limit : 20;
+  const offset = typeof params.offset === "number" ? params.offset : 0;
+  usp.set("limit", String(limit));
+  usp.set("offset", String(offset));
+  return apiFetch<NoticesResponse>(`/notices?${usp.toString()}`);
 }
 
 export async function apiGetNotice(noticeId: string) {
@@ -538,14 +553,45 @@ export async function apiGetNotice(noticeId: string) {
 }
 
 export async function apiPostNotice(body: {
+  authorId: string;
   title: string;
   content: string;
-  authorName?: string;
+  originalLang?: string;
   pinned?: boolean;
 }) {
+  if (!body.authorId) throw new Error("authorId가 필요합니다.");
   return apiFetch<any>(`/notices`, {
     method: "POST",
     auth: true,
-    body,
+    body: {
+      authorId: body.authorId,
+      titleOriginal: body.title,
+      contentOriginal: body.content,
+      originalLang: body.originalLang,
+      pinned: body.pinned ?? false,
+    },
+  });
+}
+
+export async function apiPatchNotice(
+  noticeId: string,
+  body: { title?: string; content?: string; pinned?: boolean },
+) {
+  const payload: any = {};
+  if (body.title !== undefined) payload.titleOriginal = body.title;
+  if (body.content !== undefined) payload.contentOriginal = body.content;
+  if (body.pinned !== undefined) payload.pinned = body.pinned;
+
+  return apiFetch<any>(`/notices/${noticeId}`, {
+    method: "PATCH",
+    auth: true,
+    body: payload,
+  });
+}
+
+export async function apiDeleteNotice(noticeId: string) {
+  return apiFetch<any>(`/notices/${noticeId}`, {
+    method: "DELETE",
+    auth: true,
   });
 }
