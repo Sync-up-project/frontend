@@ -6,10 +6,13 @@ import { useRouter } from "next/navigation";
 import ThemeToggle from "@/components/theme-toggle";
 import DraftViewer from "@/components/draft/DraftViewer";
 import KanbanBoardDndView from "@/components/kanban/KanbanBoardDndView";
+import { fetchCurrentUser, getAccessToken, getCurrentUser } from "@/lib/auth";
 
 type Project = {
   id: string;
   ownerId: string;
+  ownerid?: string;
+  owner?: { id?: string };
   originalLang: string;
   titleOriginal: string;
   summaryOriginal: string;
@@ -17,6 +20,8 @@ type Project = {
   mode: string;
   difficulty: string;
   status: string;
+  deadline?: string | null;
+  endDate?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -75,14 +80,11 @@ function Badge({
   tone?: "gray" | "indigo" | "emerald" | "amber" | "rose";
 }) {
   const tones: Record<string, string> = {
-    gray: "bg-gray-100 text-gray-700 dark:bg-neutral-800 dark:text-neutral-200",
-    indigo:
-      "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200",
-    emerald:
-      "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200",
-    amber:
-      "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-200",
-    rose: "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-200",
+    gray: "bg-gray-100 text-gray-700",
+    indigo: "bg-indigo-100 text-indigo-700",
+    emerald: "bg-emerald-100 text-emerald-700",
+    amber: "bg-amber-100 text-amber-700",
+    rose: "bg-rose-100 text-rose-700",
   };
 
   return (
@@ -104,22 +106,27 @@ function Card({
   right?: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border bg-white p-4 dark:bg-neutral-900 dark:border-neutral-800">
+    <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between gap-3">
-        <h3 className="text-base font-semibold text-gray-900 dark:text-neutral-100">
+        <h3 className="text-base font-bold text-gray-900">
           {title}
         </h3>
         {right}
       </div>
-      <div className="mt-3 text-sm text-gray-700 dark:text-neutral-200">
-        {children}
-      </div>
+      <div className="mt-3 text-sm text-gray-700">{children}</div>
     </section>
   );
 }
 
 function safeArr(v: any): any[] {
   return Array.isArray(v) ? v : [];
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleString();
 }
 
 type KanbanCardLike = {
@@ -158,6 +165,7 @@ export default function ProjectDetailPage({
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const [tab, setTab] = useState<"overview" | "board" | "artifact" | "raw">(
     "overview"
@@ -236,7 +244,19 @@ export default function ProjectDetailPage({
         return;
       }
 
-      setData(JSON.parse(text));
+      const json = JSON.parse(text);
+      // 백엔드 응답이 { project, latestArtifact } 또는 plain project 둘 다 들어올 수 있어 정규화합니다.
+      if (json?.project) {
+        setData({
+          project: json.project,
+          latestArtifact: json.latestArtifact ?? null,
+        });
+      } else {
+        setData({
+          project: json,
+          latestArtifact: null,
+        });
+      }
       setLoading(false);
     } catch (e) {
       setErrorMsg(String(e));
@@ -298,6 +318,10 @@ export default function ProjectDetailPage({
 
   // ✅ 프로젝트 삭제 (Next /api 프록시 호출 방식 유지)
   const deleteProject = async () => {
+    if (!isOwner) {
+      alert("프로젝트 소유자만 삭제할 수 있어요.");
+      return;
+    }
     const ok = window.confirm(
       "정말 이 프로젝트를 삭제하시겠습니까?\n삭제하면 되돌릴 수 없습니다."
     );
@@ -305,8 +329,10 @@ export default function ProjectDetailPage({
 
     setProjectDeleting(true);
     try {
+      const token = getAccessToken();
       const res = await fetch(`/api/projects/${projectId}`, {
         method: "DELETE",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       const text = await res.text();
 
@@ -326,23 +352,58 @@ export default function ProjectDetailPage({
     }
   };
 
+  const project = data?.project;
+  const latestArtifact = data?.latestArtifact ?? null;
+  const projectOwnerId =
+    project?.ownerId ?? project?.ownerid ?? project?.owner?.id ?? null;
+  const isOwner = Boolean(
+    projectOwnerId && currentUserId && String(projectOwnerId) === String(currentUserId)
+  );
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const cached = getCurrentUser();
+      if (mounted) setCurrentUserId(cached?.id ?? null);
+      try {
+        const fresh = await fetchCurrentUser();
+        if (mounted) setCurrentUserId(fresh?.id ?? cached?.id ?? null);
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   useEffect(() => {
     fetchProjectDetail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   useEffect(() => {
+    if (!isOwner) {
+      setArtifacts([]);
+      setArtifactsLoading(false);
+      setArtifactsError(null);
+      return;
+    }
     fetchArtifacts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  }, [projectId, isOwner]);
 
   useEffect(() => {
     fetchBoard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  const project = data?.project;
-  const latestArtifact = data?.latestArtifact ?? null;
+  useEffect(() => {
+    if (!isOwner && (tab === "artifact" || tab === "raw")) {
+      setTab("overview");
+    }
+  }, [isOwner, tab]);
 
   const decisionsContainer = (latestArtifact as any)?.contentJson?.decisions;
   const decisions = decisionsContainer?.answers ?? null;
@@ -351,6 +412,11 @@ export default function ProjectDetailPage({
   const policy = (data as any)?.policy ?? null;
 
   const latestArtifactId = latestArtifact?.meta?.id ?? null;
+  const tabs = useMemo(() => {
+    return isOwner
+      ? (["overview", "board", "artifact", "raw"] as const)
+      : (["overview", "board"] as const);
+  }, [isOwner]);
 
   const idea = latestArtifact?.contentJson?.ideaNormalized;
   const ideaTitle =
@@ -534,14 +600,15 @@ export default function ProjectDetailPage({
   };
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-6">
+    <div className="min-h-screen bg-gray-50">
+      <div className="mx-auto max-w-screen-2xl px-8 py-10">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">
+          <h1 className="text-2xl font-bold text-gray-900">
             {project?.titleOriginal ?? "프로젝트"}
           </h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-neutral-400">
+          <p className="mt-1 text-sm text-gray-600">
             프로젝트 ID: <code>{projectId}</code>
           </p>
           <div className="mt-2">{headerBadges}</div>
@@ -549,56 +616,62 @@ export default function ProjectDetailPage({
         <div className="flex items-center gap-2">
           <Link
             href="/projects"
-            className="rounded-lg border px-3 py-2 text-sm font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900"
+            className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
           >
             프로젝트 목록
           </Link>
 
-          {/* ✅ 프로젝트 삭제 버튼 */}
-          {/* 로그인/권한 연동 후에는 '오너만 노출'로 조건을 붙이는 것을 권장합니다. */}
-          <button
-            onClick={deleteProject}
-            disabled={projectDeleting}
-            className="rounded-lg border px-3 py-2 text-sm font-semibold hover:bg-rose-50 disabled:opacity-60 dark:hover:bg-rose-950/30"
-            title="프로젝트 삭제"
-          >
-            {projectDeleting ? "삭제 중..." : "프로젝트 삭제"}
-          </button>
+          {isOwner ? (
+            <>
+              <button
+                onClick={deleteProject}
+                disabled={projectDeleting}
+                className="rounded-xl border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                title="프로젝트 삭제"
+              >
+                {projectDeleting ? "삭제 중..." : "프로젝트 삭제"}
+              </button>
 
-          <Link
-            href="/drafts"
-            className="rounded-lg border px-3 py-2 text-sm font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900"
-          >
-            드래프트
-          </Link>
+              <Link
+                href="/drafts"
+                className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                드래프트
+              </Link>
+            </>
+          ) : (
+            <span className="rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-600">
+              오너 전용 기능 숨김
+            </span>
+          )}
           <ThemeToggle />
         </div>
       </div>
 
       {/* Error */}
       {!loading && errorMsg && (
-        <pre className="mt-4 rounded-lg border p-3 text-xs text-red-600 whitespace-pre-wrap">
+        <pre className="mt-4 rounded-2xl border border-red-200 bg-white p-4 text-xs text-red-700 whitespace-pre-wrap">
           {errorMsg}
         </pre>
       )}
 
       {/* Content */}
-      <div className="mt-6 rounded-xl border bg-gray-50 p-4 text-sm text-gray-900 dark:bg-neutral-950 dark:text-neutral-100 dark:border-neutral-800">
+      <div className="mt-8 text-sm text-gray-900">
         {loading && <p>불러오는 중...</p>}
         {!loading && !data && <p>프로젝트를 찾을 수 없어요.</p>}
 
         {/* Tabs */}
         {!loading && data && (
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            {(["overview", "board", "artifact", "raw"] as const).map((t) => (
+          <div className="mb-6 flex flex-wrap items-center gap-2">
+            {tabs.map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-semibold border
+                className={`rounded-xl border px-4 py-2 text-sm font-semibold transition-colors
                   ${
                     tab === t
-                      ? "bg-black text-white dark:bg-white dark:text-black"
-                      : "bg-white text-gray-800 hover:bg-gray-100 dark:bg-neutral-950 dark:text-neutral-100 dark:hover:bg-neutral-900"
+                      ? "border-gray-900 bg-gray-900 text-white"
+                      : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
                   }`}
               >
                 {t === "overview"
@@ -627,24 +700,30 @@ export default function ProjectDetailPage({
 
         {/* Overview tab */}
         {!loading && data && tab === "overview" && (
-          <div className="mt-4 grid gap-4">
+          <div className="mt-4 grid gap-6">
             <Card title="요약">
-              <div className="text-gray-700 dark:text-neutral-200">
+              <div className="text-gray-700">
                 <div className="font-semibold">{ideaTitle}</div>
-                <p className="mt-2 text-sm text-gray-600 dark:text-neutral-300">
+                <p className="mt-2 text-sm text-gray-600">
                   {oneLiner}
                 </p>
-                <p className="mt-3 text-xs text-gray-500 dark:text-neutral-400">
-                  오너 ID: <code>{project?.ownerId}</code>
-                </p>
+                <div className="mt-3 grid gap-2 text-xs text-gray-600 sm:grid-cols-3">
+                  <div className="rounded-xl bg-gray-50 px-3 py-2">
+                    오너 ID: <code>{projectOwnerId ?? "-"}</code>
+                  </div>
+                  <div className="rounded-xl bg-gray-50 px-3 py-2">
+                    모집 마감일: {formatDateTime(project?.deadline ?? null)}
+                  </div>
+                  <div className="rounded-xl bg-gray-50 px-3 py-2">
+                    프로젝트 마감일: {formatDateTime(project?.endDate ?? null)}
+                  </div>
+                </div>
               </div>
             </Card>
 
             <div className="grid gap-4 md:grid-cols-2">
               <Card title="설명">
-                <p className="text-gray-600 dark:text-neutral-300">
-                  {project?.descriptionOriginal ?? "-"}
-                </p>
+                <p className="text-gray-600">{project?.descriptionOriginal ?? "-"}</p>
               </Card>
 
               <MembersSummaryCard project={project} />
@@ -665,7 +744,7 @@ export default function ProjectDetailPage({
 
         {/* Board tab */}
         {!loading && data && tab === "board" && (
-          <div className="mt-4 grid gap-4">
+          <div className="mt-4 grid gap-6">
             <KanbanSummaryCard
               board={board}
               loading={boardLoading}
@@ -699,8 +778,8 @@ export default function ProjectDetailPage({
         )}
 
         {/* Artifact tab */}
-        {!loading && data && tab === "artifact" && (
-          <div className="mt-4 grid gap-3">
+        {!loading && data && isOwner && tab === "artifact" && (
+          <div className="mt-4 grid gap-6">
             {!latestArtifact ? (
               <p className="text-gray-500">최신 아티팩트가 없어요.</p>
             ) : (
@@ -725,7 +804,7 @@ export default function ProjectDetailPage({
             )}
 
             <Card title="AI 수정 요청">
-              <p className="text-xs text-gray-500 dark:text-neutral-400">
+              <p className="text-xs text-gray-500">
                 원하는 변경사항을 적으면 새 버전으로 생성돼요.
               </p>
               <textarea
@@ -733,7 +812,7 @@ export default function ProjectDetailPage({
                 onChange={(e) => setRevisionText(e.target.value)}
                 placeholder="예: API 섹션을 더 구체적으로, ERD는 최소 엔티티 3개로"
                 rows={3}
-                className="mt-3 w-full rounded-lg border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/10 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+                className="mt-3 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
               />
               <button
                 onClick={async () => {
@@ -767,7 +846,7 @@ export default function ProjectDetailPage({
                   }
                 }}
                 disabled={!revisionText.trim() || revisionSubmitting}
-                className="mt-3 inline-flex items-center rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-60 dark:bg-white dark:text-black"
+                className="mt-3 inline-flex items-center rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-60"
               >
                 {revisionSubmitting ? "수정 중..." : "AI로 수정 요청"}
               </button>
@@ -790,17 +869,17 @@ export default function ProjectDetailPage({
                     return (
                       <div
                         key={a.id}
-                        className="rounded-lg border bg-gray-50 px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-900"
+                        className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
                       >
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-md bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700 dark:bg-neutral-800 dark:text-neutral-200">
+                          <span className="rounded-md bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700">
                             v{a.version}
                           </span>
-                          <span className="text-xs text-gray-500 dark:text-neutral-400">
+                          <span className="text-xs text-gray-500">
                             {new Date(a.createdAt).toLocaleString()}
                           </span>
                           {approval?.approvedAt && (
-                            <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+                            <span className="rounded-md bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">
                               승인됨
                             </span>
                           )}
@@ -808,7 +887,7 @@ export default function ProjectDetailPage({
                             onClick={() =>
                               window.open(`/drafts/${a.id}`, "_blank")
                             }
-                            className="rounded-lg border px-3 py-1 text-xs font-semibold hover:bg-gray-100 dark:hover:bg-neutral-800"
+                            className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-semibold hover:bg-gray-100"
                           >
                             이 버전 보기
                           </button>
@@ -834,14 +913,14 @@ export default function ProjectDetailPage({
                                 }
                                 await fetchArtifacts();
                               }}
-                              className="ml-auto rounded-lg border px-3 py-1 text-xs font-semibold hover:bg-gray-100 dark:hover:bg-neutral-800"
+                              className="ml-auto rounded-lg border border-gray-200 px-3 py-1 text-xs font-semibold hover:bg-gray-100"
                             >
                               이 버전 승인
                             </button>
                           )}
                         </div>
                         {revision?.instruction && (
-                          <div className="mt-2 text-xs text-gray-600 dark:text-neutral-300">
+                          <div className="mt-2 text-xs text-gray-600">
                             수정 지시: {revision.instruction}
                           </div>
                         )}
@@ -855,11 +934,12 @@ export default function ProjectDetailPage({
         )}
 
         {/* Raw tab */}
-        {!loading && data && tab === "raw" && (
+        {!loading && data && isOwner && tab === "raw" && (
           <pre className="mt-4 whitespace-pre-wrap break-words text-xs">
             {JSON.stringify(data, null, 2)}
           </pre>
         )}
+      </div>
       </div>
 
       {/* Modals */}
@@ -946,41 +1026,31 @@ function DecisionsCard({
   const sectionOrder = ["인증", "레포", "프로젝트", "기타"];
 
   return (
-    <section className="rounded-xl border bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+    <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">결정사항</h2>
-          <p className="text-xs text-gray-500 dark:text-neutral-400">
-            드래프트 질문 기반
-          </p>
+          <p className="text-xs text-gray-500">드래프트 질문 기반</p>
         </div>
         <div className="text-right">
-          <div className="text-xs text-gray-500 dark:text-neutral-400">
-            응답
-          </div>
-          <div className="text-sm font-semibold text-gray-900 dark:text-neutral-100">
-            {answeredCount}/{totalPossible}
-          </div>
+          <div className="text-xs text-gray-500">응답</div>
+          <div className="text-sm font-semibold text-gray-900">{answeredCount}/{totalPossible}</div>
         </div>
       </div>
 
-      <div className="mt-3 grid gap-2 text-xs text-gray-600 dark:text-neutral-300 sm:grid-cols-2">
-        <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-neutral-900">
+      <div className="mt-3 grid gap-2 text-xs text-gray-600 sm:grid-cols-2">
+        <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
           <span>응답 시각</span>
-          <span className="font-medium text-gray-900 dark:text-neutral-100">
-            {answeredAt ? new Date(answeredAt).toLocaleString() : "-"}
-          </span>
+          <span className="font-medium text-gray-900">{answeredAt ? new Date(answeredAt).toLocaleString() : "-"}</span>
         </div>
-        <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-neutral-900">
+        <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
           <span>스키마 버전</span>
-          <span className="font-medium text-gray-900 dark:text-neutral-100">
-            {schemaVersion ?? "-"}
-          </span>
+          <span className="font-medium text-gray-900">{schemaVersion ?? "-"}</span>
         </div>
       </div>
 
       {entries.length === 0 ? (
-        <p className="mt-3 text-sm text-gray-600 dark:text-neutral-300">
+        <p className="mt-3 text-sm text-gray-600">
           아직 저장된 결정 사항이 없어요. (드래프트에서 질문을 선택하고
           Confirm하면 여기에 표시돼요.)
         </p>
@@ -995,24 +1065,18 @@ function DecisionsCard({
               return (
                 <div
                   key={section}
-                  className="rounded-lg border bg-gray-50 p-3 dark:border-neutral-800 dark:bg-neutral-900"
+                  className="rounded-xl border border-gray-200 bg-gray-50 p-3"
                 >
-                  <div className="mb-2 text-sm font-semibold text-gray-800 dark:text-neutral-100">
-                    {section}
-                  </div>
+                  <div className="mb-2 text-sm font-semibold text-gray-800">{section}</div>
 
                   <div className="space-y-2">
                     {items.map((it) => (
                       <div
                         key={it.key}
-                        className="flex items-start justify-between gap-4 rounded-md bg-white/60 px-2 py-1 text-sm dark:bg-neutral-950/40"
+                        className="flex items-start justify-between gap-4 rounded-md bg-white px-2 py-1 text-sm"
                       >
-                        <span className="text-gray-600 dark:text-neutral-300">
-                          {it.label}
-                        </span>
-                        <span className="font-medium text-gray-900 dark:text-neutral-100">
-                          {it.value}
-                        </span>
+                        <span className="text-gray-600">{it.label}</span>
+                        <span className="font-medium text-gray-900">{it.value}</span>
                       </div>
                     ))}
                   </div>
@@ -1029,17 +1093,15 @@ function EffectiveSettingsCard({ policy }: { policy: any }) {
   if (!policy) return null;
 
   return (
-    <section className="mt-4 rounded-xl border bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+    <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">적용 설정</h2>
-        <span className="text-xs text-gray-500 dark:text-neutral-400">
-          결정사항 기반
-        </span>
+        <span className="text-xs text-gray-500">결정사항 기반</span>
       </div>
 
       <div className="mt-3 grid gap-2 text-sm">
-        <div className="flex justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-neutral-900">
-          <span className="text-gray-600 dark:text-neutral-300">인증</span>
+        <div className="flex justify-between rounded-xl bg-gray-50 px-3 py-2">
+          <span className="text-gray-600">인증</span>
           <span className="font-medium">
             {policy?.auth?.loginMethod === "GITHUB_ONLY"
               ? "GitHub OAuth만"
@@ -1049,10 +1111,8 @@ function EffectiveSettingsCard({ policy }: { policy: any }) {
           </span>
         </div>
 
-        <div className="flex justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-neutral-900">
-          <span className="text-gray-600 dark:text-neutral-300">
-            프로젝트당 레포
-          </span>
+        <div className="flex justify-between rounded-xl bg-gray-50 px-3 py-2">
+          <span className="text-gray-600">프로젝트당 레포</span>
           <span className="font-medium">
             {policy?.repo?.perProject === 1
               ? "1개"
@@ -1069,18 +1129,14 @@ function EffectiveSettingsCard({ policy }: { policy: any }) {
 function MembersSummaryCard({ project }: { project?: Project }) {
   return (
     <Card title="멤버">
-      <div className="space-y-2 text-sm text-gray-600 dark:text-neutral-300">
-        <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-neutral-900">
+      <div className="space-y-2 text-sm text-gray-600">
+        <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
           <span>총 멤버 수</span>
-          <span className="font-medium text-gray-900 dark:text-neutral-100">
-            1
-          </span>
+          <span className="font-medium text-gray-900">1</span>
         </div>
-        <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-neutral-900">
+        <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
           <span>오너</span>
-          <span className="font-medium text-gray-900 dark:text-neutral-100">
-            {project?.ownerId ?? "-"}
-          </span>
+          <span className="font-medium text-gray-900">{project?.ownerId ?? "-"}</span>
         </div>
       </div>
     </Card>
@@ -1108,22 +1164,18 @@ function ArtifactSummaryCard({
       {!latestArtifact ? (
         <p className="text-gray-500">아직 연결된 AI 산출물이 없어요.</p>
       ) : (
-        <div className="grid gap-2 text-sm text-gray-600 dark:text-neutral-300">
-          <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-neutral-900">
+        <div className="grid gap-2 text-sm text-gray-600">
+          <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
             <span>기능 수</span>
-            <span className="font-medium text-gray-900 dark:text-neutral-100">
-              {featuresCount}
-            </span>
+            <span className="font-medium text-gray-900">{featuresCount}</span>
           </div>
-          <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-neutral-900">
+          <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
             <span>버전</span>
-            <span className="font-medium text-gray-900 dark:text-neutral-100">
-              {latestArtifact.meta.version}
-            </span>
+            <span className="font-medium text-gray-900">{latestArtifact.meta.version}</span>
           </div>
-          <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-neutral-900">
+          <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
             <span>업데이트</span>
-            <span className="font-medium text-gray-900 dark:text-neutral-100">
+            <span className="font-medium text-gray-900">
               {new Date(latestArtifact.meta.updatedAt).toLocaleString()}
             </span>
           </div>
@@ -1149,12 +1201,10 @@ function KanbanSummaryCard({
     : 0;
 
   return (
-    <section className="rounded-xl border bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+    <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">칸반</h2>
-        <span className="text-xs text-gray-500 dark:text-neutral-400">
-          Confirm 시 자동 생성
-        </span>
+        <span className="text-xs text-gray-500">Confirm 시 자동 생성</span>
       </div>
 
       {error ? (
@@ -1162,21 +1212,17 @@ function KanbanSummaryCard({
           {error}
         </pre>
       ) : loading ? (
-        <p className="mt-3 text-sm text-gray-600 dark:text-neutral-300">
-          불러오는 중...
-        </p>
+        <p className="mt-3 text-sm text-gray-600">불러오는 중...</p>
       ) : !board ? (
-        <p className="mt-3 text-sm text-gray-600 dark:text-neutral-300">
-          칸반 보드를 찾을 수 없어요.
-        </p>
+        <p className="mt-3 text-sm text-gray-600">칸반 보드를 찾을 수 없어요.</p>
       ) : (
         <div className="mt-3 grid gap-2 text-sm">
-          <div className="flex justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-neutral-900">
-            <span className="text-gray-600 dark:text-neutral-300">컬럼 수</span>
+          <div className="flex justify-between rounded-xl bg-gray-50 px-3 py-2">
+            <span className="text-gray-600">컬럼 수</span>
             <span className="font-medium">{columns.length}</span>
           </div>
-          <div className="flex justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-neutral-900">
-            <span className="text-gray-600 dark:text-neutral-300">카드 수</span>
+          <div className="flex justify-between rounded-xl bg-gray-50 px-3 py-2">
+            <span className="text-gray-600">카드 수</span>
             <span className="font-medium">{totalCards}</span>
           </div>
 
@@ -1184,12 +1230,10 @@ function KanbanSummaryCard({
             {columns.map((c: any) => (
               <div
                 key={c.id}
-                className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-neutral-900"
+                className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2"
               >
                 <span className="font-medium">{c.title}</span>
-                <span className="text-xs text-gray-500 dark:text-neutral-400">
-                  {c.cards?.length ?? 0}개
-                </span>
+                <span className="text-xs text-gray-500">{c.cards?.length ?? 0}개</span>
               </div>
             ))}
           </div>
@@ -1221,19 +1265,17 @@ function KanbanBoardView({
       {columns.map((c) => (
         <div
           key={c.id}
-          className="rounded-xl border bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950"
+          className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
         >
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
               <div className="font-semibold truncate">{c.title}</div>
-              <div className="text-xs text-gray-500 dark:text-neutral-400">
-                {c.cards?.length ?? 0} cards
-              </div>
+              <div className="text-xs text-gray-500">{c.cards?.length ?? 0} cards</div>
             </div>
 
             <button
               onClick={() => onAddCard(c.id, c.title)}
-              className="shrink-0 rounded-lg border px-3 py-1 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900"
+              className="shrink-0 rounded-lg border border-gray-200 px-3 py-1 text-xs font-semibold hover:bg-gray-50"
               title="이 컬럼에 카드 추가"
             >
               + 카드 추가
@@ -1244,26 +1286,24 @@ function KanbanBoardView({
             {(c.cards ?? []).map((card) => (
               <div
                 key={card.id}
-                className="rounded-lg border bg-gray-50 px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-900"
+                className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="font-medium text-gray-900 dark:text-neutral-100 truncate">
-                      {card.title}
-                    </div>
+                    <div className="font-medium text-gray-900 truncate">{card.title}</div>
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={() => onEditCard(card, c.title)}
-                      className="rounded-md border px-2 py-1 text-xs font-semibold hover:bg-gray-100 dark:hover:bg-neutral-800"
+                      className="rounded-md border border-gray-200 px-2 py-1 text-xs font-semibold hover:bg-gray-100"
                       title="카드 수정"
                     >
                       수정
                     </button>
                     <button
                       onClick={() => onDeleteCard(card.id, card.title, c.title)}
-                      className="rounded-md border px-2 py-1 text-xs font-semibold hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                      className="rounded-md border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
                       title="카드 삭제"
                     >
                       삭제
@@ -1272,12 +1312,12 @@ function KanbanBoardView({
                 </div>
 
                 {card.description && (
-                  <div className="mt-1 text-xs text-gray-600 dark:text-neutral-300 line-clamp-2">
+                  <div className="mt-1 text-xs text-gray-600 line-clamp-2">
                     {card.description}
                   </div>
                 )}
                 {card.dueDate && (
-                  <div className="mt-1 text-xs text-gray-500 dark:text-neutral-400">
+                  <div className="mt-1 text-xs text-gray-500">
                     due: {new Date(card.dueDate).toLocaleDateString()}
                   </div>
                 )}
@@ -1285,9 +1325,7 @@ function KanbanBoardView({
             ))}
 
             {(c.cards ?? []).length === 0 && (
-              <div className="text-xs text-gray-500 dark:text-neutral-400">
-                카드 없음
-              </div>
+              <div className="text-xs text-gray-500">카드 없음</div>
             )}
           </div>
         </div>
@@ -1332,19 +1370,17 @@ function AddCardModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-lg rounded-2xl border bg-white p-4 shadow-lg dark:border-neutral-800 dark:bg-neutral-950">
+      <div className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white p-5 shadow-lg">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-neutral-100">
-              카드 추가
-            </h3>
-            <p className="mt-1 text-xs text-gray-500 dark:text-neutral-400">
+            <h3 className="text-lg font-semibold text-gray-900">카드 추가</h3>
+            <p className="mt-1 text-xs text-gray-500">
               컬럼: <span className="font-semibold">{columnTitle}</span>
             </p>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg border px-3 py-1 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900"
+            className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-semibold hover:bg-gray-50"
           >
             닫기
           </button>
@@ -1357,7 +1393,7 @@ function AddCardModal({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="예: ERD 초안 작성"
-              className="rounded-lg border bg-white px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
             />
           </label>
 
@@ -1368,7 +1404,7 @@ function AddCardModal({
               onChange={(e) => setDesc(e.target.value)}
               placeholder="예: 엔티티 3개 이상, 관계 포함"
               rows={3}
-              className="rounded-lg border bg-white px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
             />
           </label>
 
@@ -1378,7 +1414,7 @@ function AddCardModal({
               type="date"
               value={due}
               onChange={(e) => setDue(e.target.value)}
-              className="rounded-lg border bg-white px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
             />
           </label>
         </div>
@@ -1386,14 +1422,14 @@ function AddCardModal({
         <div className="mt-4 flex items-center justify-end gap-2">
           <button
             onClick={onClose}
-            className="rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900"
+            className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold hover:bg-gray-50"
           >
             취소
           </button>
           <button
             disabled={!canSubmit}
             onClick={onSubmit}
-            className="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-60 dark:bg-white dark:text-black"
+            className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-60"
           >
             {submitting ? "추가 중..." : "추가"}
           </button>
@@ -1439,19 +1475,17 @@ function EditCardModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-lg rounded-2xl border bg-white p-4 shadow-lg dark:border-neutral-800 dark:bg-neutral-950">
+      <div className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white p-5 shadow-lg">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-neutral-100">
-              카드 수정
-            </h3>
-            <p className="mt-1 text-xs text-gray-500 dark:text-neutral-400">
+            <h3 className="text-lg font-semibold text-gray-900">카드 수정</h3>
+            <p className="mt-1 text-xs text-gray-500">
               컬럼: <span className="font-semibold">{columnTitle}</span>
             </p>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg border px-3 py-1 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900"
+            className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-semibold hover:bg-gray-50"
           >
             닫기
           </button>
@@ -1464,7 +1498,7 @@ function EditCardModal({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="예: ERD 초안 작성"
-              className="rounded-lg border bg-white px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
             />
           </label>
 
@@ -1475,7 +1509,7 @@ function EditCardModal({
               onChange={(e) => setDesc(e.target.value)}
               placeholder="예: 엔티티 3개 이상, 관계 포함"
               rows={3}
-              className="rounded-lg border bg-white px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
             />
           </label>
 
@@ -1485,9 +1519,9 @@ function EditCardModal({
               type="date"
               value={due}
               onChange={(e) => setDue(e.target.value)}
-              className="rounded-lg border bg-white px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
             />
-            <p className="text-[11px] text-gray-500 dark:text-neutral-400">
+            <p className="text-[11px] text-gray-500">
               비우면 마감일이 제거돼요.
             </p>
           </label>
@@ -1496,14 +1530,14 @@ function EditCardModal({
         <div className="mt-4 flex items-center justify-end gap-2">
           <button
             onClick={onClose}
-            className="rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900"
+            className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold hover:bg-gray-50"
           >
             취소
           </button>
           <button
             disabled={!canSubmit}
             onClick={onSubmit}
-            className="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-60 dark:bg-white dark:text-black"
+            className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-60"
           >
             {submitting ? "저장 중..." : "저장"}
           </button>
@@ -1537,25 +1571,23 @@ function DeleteConfirmModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-md rounded-2xl border bg-white p-4 shadow-lg dark:border-neutral-800 dark:bg-neutral-950">
+      <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-lg">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-neutral-100">
-              카드 삭제
-            </h3>
-            <p className="mt-1 text-xs text-gray-500 dark:text-neutral-400">
+            <h3 className="text-lg font-semibold text-gray-900">카드 삭제</h3>
+            <p className="mt-1 text-xs text-gray-500">
               컬럼: <span className="font-semibold">{columnTitle}</span>
             </p>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg border px-3 py-1 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900"
+            className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-semibold hover:bg-gray-50"
           >
             닫기
           </button>
         </div>
 
-        <div className="mt-4 rounded-lg border bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-200">
+        <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
           이 카드를 삭제할까요?
           <div className="mt-1 font-semibold break-words">“{title}”</div>
         </div>
@@ -1563,7 +1595,7 @@ function DeleteConfirmModal({
         <div className="mt-4 flex items-center justify-end gap-2">
           <button
             onClick={onClose}
-            className="rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900"
+            className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold hover:bg-gray-50"
           >
             취소
           </button>

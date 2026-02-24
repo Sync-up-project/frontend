@@ -52,10 +52,12 @@ export async function DELETE(
 
     // 쿠키 기반 인증이 붙을 가능성 대비(없으면 전달 안 함)
     const cookie = req.headers.get("cookie") ?? "";
+    const authorization = req.headers.get("authorization") ?? "";
 
     const res = await fetch(url, {
       method: "DELETE",
       headers: {
+        ...(authorization ? { authorization } : {}),
         ...(cookie ? { cookie } : {}),
       },
       cache: "no-store",
@@ -64,6 +66,46 @@ export async function DELETE(
     const text = await res.text();
     const contentType = res.headers.get("content-type") ?? "application/json";
 
+    return new NextResponse(text, {
+      status: res.status,
+      headers: { "content-type": contentType },
+    });
+  } catch (e) {
+    return NextResponse.json(
+      {
+        error: "Proxy failed",
+        detail: String(e),
+        backendBase: getBackendBase(),
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const backend = getBackendBase();
+    const url = `${backend}/projects/${params.id}`;
+    const cookie = req.headers.get("cookie") ?? "";
+    const authorization = req.headers.get("authorization") ?? "";
+    const body = await req.text();
+
+    const res = await fetch(url, {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        ...(authorization ? { authorization } : {}),
+        ...(cookie ? { cookie } : {}),
+      },
+      body,
+      cache: "no-store",
+    });
+
+    const text = await res.text();
+    const contentType = res.headers.get("content-type") ?? "application/json";
     return new NextResponse(text, {
       status: res.status,
       headers: { "content-type": contentType },

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { getCurrentUser } from "@/lib/auth";
 
 const PRESETS = ["LIGHT", "MEDIUM", "HEAVY"] as const;
 const LANGS = ["KO", "EN"] as const;
@@ -64,10 +65,16 @@ export default function GenerateDraftPage() {
     setLoading(true);
     setErrorMsg(null);
     try {
+      const me = getCurrentUser();
       const res = await fetch("/api/ai/project/generate-async", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ideaText, language, mockPreset }),
+        body: JSON.stringify({
+          ideaText,
+          language,
+          mockPreset,
+          createdById: me?.id ?? undefined,
+        }),
       });
       const text = await res.text();
       if (!res.ok) {
@@ -90,30 +97,31 @@ export default function GenerateDraftPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <div className="flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">드래프트 생성</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-neutral-400">
-            아이디어 한 줄로 드래프트를 생성해요 (Mock provider)
-          </p>
+    <div className="min-h-screen bg-gray-50">
+      <div className="mx-auto max-w-screen-2xl px-8 py-10">
+        <div className="flex items-end justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">드래프트 생성</h1>
+            <p className="mt-1 text-sm text-gray-600">
+              아이디어 한 줄로 드래프트를 생성해요 (Mock provider)
+            </p>
+          </div>
+          <Link
+            href="/drafts"
+            className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            드래프트
+          </Link>
         </div>
-        <Link
-          href="/drafts"
-          className="rounded-lg border px-3 py-2 text-sm font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900"
-        >
-          드래프트
-        </Link>
-      </div>
 
-      <div className="mt-6 rounded-xl border bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
-        <label className="text-sm font-semibold">아이디어 / 행동</label>
+      <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <label className="text-sm font-semibold text-gray-900">아이디어 / 행동</label>
         <textarea
           value={ideaText}
           onChange={(e) => setIdeaText(e.target.value)}
           placeholder="예: 팀 협업을 위한 AI 기반 프로젝트 플래너"
           rows={6}
-          className="mt-2 w-full rounded-lg border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/10 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300"
         />
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -124,7 +132,7 @@ export default function GenerateDraftPage() {
               onChange={(e) =>
                 setLanguage(e.target.value as (typeof LANGS)[number])
               }
-              className="rounded-lg border bg-white px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-900"
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
             >
               {LANGS.map((lang) => (
                 <option key={lang} value={lang}>
@@ -141,7 +149,7 @@ export default function GenerateDraftPage() {
               onChange={(e) =>
                 setMockPreset(e.target.value as (typeof PRESETS)[number])
               }
-              className="rounded-lg border bg-white px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-900"
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
             >
               {PRESETS.map((preset) => (
                 <option key={preset} value={preset}>
@@ -153,7 +161,7 @@ export default function GenerateDraftPage() {
         </div>
 
         {errorMsg && (
-          <pre className="mt-4 whitespace-pre-wrap rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-200">
+          <pre className="mt-4 whitespace-pre-wrap rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
             {errorMsg}
           </pre>
         )}
@@ -161,14 +169,15 @@ export default function GenerateDraftPage() {
         <button
           onClick={onSubmit}
           disabled={!canSubmit}
-          className={`mt-5 inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold ${
+          className={`mt-5 inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold ${
             canSubmit
-              ? "bg-black text-white hover:bg-gray-800 dark:bg-white dark:text-black"
-              : "cursor-not-allowed bg-gray-200 text-gray-500 dark:bg-neutral-800 dark:text-neutral-500"
+              ? "bg-gray-900 text-white hover:bg-gray-800"
+              : "cursor-not-allowed bg-gray-200 text-gray-500"
           }`}
         >
           {loading ? "생성 중..." : "아이디어 입력 → 드래프트 생성"}
         </button>
+      </div>
       </div>
     </div>
   );

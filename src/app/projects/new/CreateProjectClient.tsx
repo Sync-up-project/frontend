@@ -136,7 +136,8 @@ export default function CreateProjectClient() {
   const [title, setTitle] = useState("");
   const [position, setPosition] = useState<Position>("backend");
   const [count, setCount] = useState<number>(5);
-  const [dueDate, setDueDate] = useState<string>("");
+  const [recruitDeadline, setRecruitDeadline] = useState<string>("");
+  const [projectEndDate, setProjectEndDate] = useState<string>("");
   const [allowComment, setAllowComment] = useState(true);
   const [allowShare, setAllowShare] = useState(true);
   const [allowScrap, setAllowScrap] = useState(false);
@@ -180,8 +181,14 @@ export default function CreateProjectClient() {
         setErrorMsg(tr("프로젝트명을 입력해 주세요.", "プロジェクト名を入力してください。"));
         return;
       }
-      if (!dueDate) {
-        setErrorMsg(tr("기한을 선택해 주세요.", "期限を選択してください。"));
+      if (!recruitDeadline) {
+        setErrorMsg(tr("모집 마감일을 선택해 주세요.", "募集締切を選択してください。"));
+        return;
+      }
+      if (!projectEndDate) {
+        setErrorMsg(
+          tr("프로젝트 마감일을 선택해 주세요.", "プロジェクト終了日を選択してください。")
+        );
         return;
       }
 
@@ -193,22 +200,35 @@ export default function CreateProjectClient() {
 
       const techStacks = mapStacksToLabels(selectedStacks);
 
-      const summaryOriginal = body.trim()
-        ? body.trim().split("\n")[0].slice(0, 120)
+      const selectedToolLabels = TOOLS.filter((t) =>
+        selectedTools.includes(t.id)
+      ).map((t) => t.label);
+      const details = [
+        body.trim(),
+        selectedToolLabels.length > 0
+          ? `${tr("협업 도구", "協業ツール")}: ${selectedToolLabels.join(", ")}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      const summaryOriginal = details.trim()
+        ? details.trim().split("\n")[0].slice(0, 120)
         : "";
 
       // ✅ 백엔드 POST /projects에 맞춘 payload
       const payload = {
         ownerId: String(me.id), // (인증 붙이면 서버에서 userId 추출하도록 변경)
-        originalLang: lang === "JP" ? "JP" : "KO",
+        originalLang: lang === "JP" ? "JA" : "KO",
         titleOriginal: title.trim(),
         summaryOriginal,
-        descriptionOriginal: body,
+        descriptionOriginal: details,
         mode: "ONLINE",
         difficulty: "MEDIUM",
         capacity: Number.isFinite(count) ? Number(count) : 1,
-        endDate: dueDate ? new Date(dueDate).toISOString() : null,
-        deadline: dueDate ? new Date(dueDate).toISOString() : null,
+        endDate: projectEndDate ? new Date(projectEndDate).toISOString() : null,
+        deadline: recruitDeadline
+          ? new Date(recruitDeadline).toISOString()
+          : null,
         techStacks,
         positionNeeds: mapPositionNeeds(position),
         // 아래 옵션들은 현재 백엔드 스키마에 없을 가능성이 높아서 일단 전송하지 않습니다.
@@ -333,15 +353,34 @@ export default function CreateProjectClient() {
               />
             </SectionCard>
 
-            <SectionCard title={tr("마감 기한 (필수)", "締切（必須）")}>
+            <SectionCard title={tr("모집 마감일 (필수)", "募集締切（必須）")}>
               <p className="text-xs text-gray-500 mb-3">
-                {tr("마감 날짜를 선택해 주세요.", "締切日を選択してください。")}
+                {tr(
+                  "지원/모집을 받을 마감 날짜를 선택해 주세요.",
+                  "募集を締め切る日を選択してください。"
+                )}
               </p>
 
               <input
                 type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
+                value={recruitDeadline}
+                onChange={(e) => setRecruitDeadline(e.target.value)}
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300"
+              />
+            </SectionCard>
+
+            <SectionCard title={tr("프로젝트 마감일 (필수)", "プロジェクト締切（必須）")}>
+              <p className="text-xs text-gray-500 mb-3">
+                {tr(
+                  "프로젝트 진행이 종료되는 목표 날짜를 선택해 주세요.",
+                  "プロジェクト終了予定日を選択してください。"
+                )}
+              </p>
+
+              <input
+                type="date"
+                value={projectEndDate}
+                onChange={(e) => setProjectEndDate(e.target.value)}
                 className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300"
               />
             </SectionCard>

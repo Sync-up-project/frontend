@@ -1,0 +1,518 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { fetchCurrentUser, getAccessToken, getCurrentUser } from "@/lib/auth";
+import { apiGetProjectsList, pickArray } from "@/lib/api";
+
+type ManagedProject = {
+  id: string;
+  ownerId: string;
+  title: string;
+  summary: string;
+  status: string;
+  mode: string;
+  difficulty: string;
+  description: string;
+  deadline: string | null;
+  endDate: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  membersCount: number;
+  capacity: number;
+};
+
+function formatDate(value?: string | null) {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleString();
+}
+
+function statusTone(status: string) {
+  const s = (status ?? "").toUpperCase();
+  if (s.includes("RECRUIT") || s.includes("OPEN")) return "bg-emerald-100 text-emerald-700";
+  if (s.includes("PROGRESS")) return "bg-indigo-100 text-indigo-700";
+  if (s.includes("COMPLETE") || s.includes("DONE")) return "bg-gray-200 text-gray-700";
+  if (s.includes("CANCEL") || s.includes("CLOSED")) return "bg-rose-100 text-rose-700";
+  return "bg-gray-100 text-gray-700";
+}
+
+function toInputDate(value?: string | null) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+export default function ProjectManagePage() {
+  const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [items, setItems] = useState<ManagedProject[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [keyword, setKeyword] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [closingId, setClosingId] = useState<string | null>(null);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editing, setEditing] = useState<ManagedProject | null>(null);
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [formTitle, setFormTitle] = useState("");
+  const [formSummary, setFormSummary] = useState("");
+  const [formDescription, setFormDescription] = useState("");
+  const [formCapacity, setFormCapacity] = useState("1");
+  const [formDeadline, setFormDeadline] = useState("");
+  const [formEndDate, setFormEndDate] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function run() {
+      setLoading(true);
+      setErrorMsg(null);
+
+      try {
+        const cached = getCurrentUser();
+        const fallbackId = cached?.id ?? null;
+
+        let currentUserId = fallbackId;
+        try {
+          const fresh = await fetchCurrentUser();
+          currentUserId = fresh?.id ?? currentUserId;
+        } catch {
+          // 토큰 만료 등으로 /auth/me 실패할 수 있어 캐시를 fallback으로 사용
+        }
+
+        if (!mounted) return;
+        setMyUserId(currentUserId);
+
+        const listRes = await apiGetProjectsList();
+        const raw = pickArray<any>(listRes);
+
+        const mapped: ManagedProject[] = raw.map((p) => ({
+          id: String(p?.id ?? ""),
+          ownerId: String(p?.ownerId ?? p?.owner?.id ?? ""),
+          title: String(p?.titleOriginal ?? p?.title ?? "제목 없음"),
+          summary: String(p?.summaryOriginal ?? p?.summary ?? "-"),
+          description: String(p?.descriptionOriginal ?? p?.description ?? ""),
+          status: String(p?.status ?? "UNKNOWN"),
+          mode: String(p?.mode ?? "-"),
+          difficulty: String(p?.difficulty ?? "-"),
+          deadline: p?.deadline ? String(p.deadline) : null,
+          endDate: p?.endDate ? String(p.endDate) : null,
+          createdAt: p?.createdAt ? String(p.createdAt) : null,
+          updatedAt: p?.updatedAt ? String(p.updatedAt) : null,
+          membersCount: Number(p?.membersCount ?? p?.members_count ?? 0) || 0,
+          capacity: Number(p?.capacity ?? p?.membersCountMax ?? 0) || 0,
+        }));
+
+        const owned = currentUserId
+          ? mapped.filter((m) => m.ownerId && m.ownerId === currentUserId)
+          : [];
+
+        if (!mounted) return;
+        setItems(owned);
+      } catch (e) {
+        if (!mounted) return;
+        setItems([]);
+        setErrorMsg(String(e));
+      } finally {
+        if (!mounted) return;
+        setLoading(false);
+      }
+    }
+
+    run();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = keyword.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter(
+      (it) =>
+        it.title.toLowerCase().includes(q) ||
+        it.summary.toLowerCase().includes(q) ||
+        it.id.toLowerCase().includes(q)
+    );
+  }, [items, keyword]);
+
+  async function onDelete(projectId: string) {
+    const ok = window.confirm("정말 이 프로젝트를 삭제할까요? 삭제 후 복구할 수 없습니다.");
+    if (!ok) return;
+
+    setDeletingId(projectId);
+    try {
+      const token = getAccessToken();
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "DELETE",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        alert(`삭제 실패: ${res.status} ${res.statusText}\n${text}`);
+        setDeletingId(null);
+        return;
+      }
+
+      setItems((prev) => prev.filter((it) => it.id !== projectId));
+    } catch (e) {
+      alert(`삭제 실패: ${String(e)}`);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function onEarlyClose(projectId: string) {
+    const ok = window.confirm("이 프로젝트의 모집을 지금 즉시 마감할까요?");
+    if (!ok) return;
+
+    setClosingId(projectId);
+    try {
+      const token = getAccessToken();
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ deadline: new Date().toISOString() }),
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        alert(`조기 마감 실패: ${res.status} ${res.statusText}\n${text}`);
+        return;
+      }
+
+      const nowIso = new Date().toISOString();
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === projectId ? { ...it, deadline: nowIso, updatedAt: nowIso } : it
+        )
+      );
+    } catch (e) {
+      alert(`조기 마감 실패: ${String(e)}`);
+    } finally {
+      setClosingId(null);
+    }
+  }
+
+  function openEditModal(item: ManagedProject) {
+    setEditing(item);
+    setFormTitle(item.title);
+    setFormSummary(item.summary);
+    setFormDescription(item.description ?? "");
+    setFormCapacity(String(item.capacity || 1));
+    setFormDeadline(toInputDate(item.deadline));
+    setFormEndDate(toInputDate(item.endDate));
+    setEditOpen(true);
+  }
+
+  function closeEditModal() {
+    setEditOpen(false);
+    setEditing(null);
+    setEditSubmitting(false);
+  }
+
+  async function onSaveEdit() {
+    if (!editing) return;
+    if (!formTitle.trim()) {
+      alert("프로젝트 제목은 필수예요.");
+      return;
+    }
+    if (!formDeadline || !formEndDate) {
+      alert("모집 마감일과 프로젝트 마감일을 모두 입력해 주세요.");
+      return;
+    }
+
+    setEditSubmitting(true);
+    try {
+      const token = getAccessToken();
+      const payload = {
+        titleOriginal: formTitle.trim(),
+        summaryOriginal: formSummary.trim(),
+        descriptionOriginal: formDescription.trim(),
+        capacity: Number(formCapacity) > 0 ? Number(formCapacity) : 1,
+        deadline: new Date(formDeadline).toISOString(),
+        endDate: new Date(formEndDate).toISOString(),
+      };
+      const res = await fetch(`/api/projects/${editing.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        alert(`수정 실패: ${res.status} ${res.statusText}\n${text}`);
+        setEditSubmitting(false);
+        return;
+      }
+
+      const json = text ? JSON.parse(text) : null;
+      const updated = json?.project ?? null;
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === editing.id
+            ? {
+                ...it,
+                title: updated?.titleOriginal ?? payload.titleOriginal,
+                summary: updated?.summaryOriginal ?? payload.summaryOriginal,
+                description:
+                  updated?.descriptionOriginal ?? payload.descriptionOriginal,
+                capacity: updated?.capacity ?? payload.capacity,
+                deadline: updated?.deadline ?? payload.deadline,
+                endDate: updated?.endDate ?? payload.endDate,
+                updatedAt: updated?.updatedAt ?? new Date().toISOString(),
+              }
+            : it
+        )
+      );
+      closeEditModal();
+    } catch (e) {
+      alert(`수정 실패: ${String(e)}`);
+      setEditSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="mx-auto max-w-screen-2xl px-8 py-10">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">프로젝트 관리</h1>
+            <p className="mt-1 text-sm text-gray-600">내가 생성한 프로젝트를 한 곳에서 관리해요.</p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Link
+              href="/projects/new"
+              className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+            >
+              프로젝트 생성
+            </Link>
+            <Link
+              href="/projects"
+              className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              프로젝트 목록
+            </Link>
+          </div>
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold text-gray-500">내 프로젝트</p>
+            <p className="mt-1 text-2xl font-bold text-gray-900">{items.length}</p>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold text-gray-500">현재 표시</p>
+            <p className="mt-1 text-2xl font-bold text-gray-900">{filtered.length}</p>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold text-gray-500">로그인 사용자 ID</p>
+            <p className="mt-1 truncate text-sm font-semibold text-gray-700">{myUserId ?? "-"}</p>
+          </div>
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <label className="text-xs font-semibold text-gray-500">검색</label>
+          <input
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            placeholder="프로젝트명 / 요약 / ID"
+            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-gray-300"
+          />
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm">
+          {loading ? (
+            <div className="p-5 text-sm text-gray-600">불러오는 중...</div>
+          ) : errorMsg ? (
+            <pre className="p-5 text-xs text-red-700 whitespace-pre-wrap">{errorMsg}</pre>
+          ) : items.length === 0 ? (
+            <div className="p-6 text-sm text-gray-600">
+              관리 가능한 프로젝트가 없어요. 프로젝트 생성 후 다시 확인해주세요.
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="p-6 text-sm text-gray-600">검색 조건에 맞는 프로젝트가 없어요.</div>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {filtered.map((it) => (
+                <li key={it.id} className="p-5">
+                  <div className="flex flex-wrap items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="truncate text-base font-bold text-gray-900">{it.title}</h2>
+                        <span className={`rounded-md px-2 py-1 text-xs font-semibold ${statusTone(it.status)}`}>
+                          {it.status}
+                        </span>
+                        <span className="rounded-md bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700">
+                          {it.mode}
+                        </span>
+                        <span className="rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700">
+                          {it.difficulty}
+                        </span>
+                      </div>
+
+                      <p className="mt-2 text-sm text-gray-600 line-clamp-2">{it.summary}</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                        <span>ID: {it.id}</span>
+                        <span>모집 마감: {formatDate(it.deadline)}</span>
+                        <span>프로젝트 마감: {formatDate(it.endDate)}</span>
+                        <span>생성: {formatDate(it.createdAt)}</span>
+                        <span>수정: {formatDate(it.updatedAt)}</span>
+                        <span>
+                          인원: {it.membersCount}/{it.capacity || "-"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onEarlyClose(it.id)}
+                        disabled={closingId === it.id}
+                        className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+                      >
+                        {closingId === it.id ? "마감 중..." : "모집 조기 마감"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(it)}
+                        className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                      >
+                        수정
+                      </button>
+                      <Link
+                        href={`/projects/${it.id}`}
+                        className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                      >
+                        상세
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(it.id)}
+                        disabled={deletingId === it.id}
+                        className="rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                      >
+                        {deletingId === it.id ? "삭제 중..." : "삭제"}
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      {editOpen && editing && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeEditModal();
+          }}
+        >
+          <div className="w-full max-w-2xl rounded-2xl border border-gray-200 bg-white p-5 shadow-lg">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">프로젝트 수정</h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  ID: <code>{editing.id}</code>
+                </p>
+              </div>
+              <button
+                onClick={closeEditModal}
+                className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-semibold hover:bg-gray-50"
+              >
+                닫기
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <label className="grid gap-1 text-sm">
+                <span className="font-semibold">프로젝트명</span>
+                <input
+                  value={formTitle}
+                  onChange={(e) => setFormTitle(e.target.value)}
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="font-semibold">요약</span>
+                <input
+                  value={formSummary}
+                  onChange={(e) => setFormSummary(e.target.value)}
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="font-semibold">설명</span>
+                <textarea
+                  value={formDescription}
+                  onChange={(e) => setFormDescription(e.target.value)}
+                  rows={4}
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="grid gap-1 text-sm">
+                  <span className="font-semibold">모집 인원</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={formCapacity}
+                    onChange={(e) => setFormCapacity(e.target.value)}
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="grid gap-1 text-sm">
+                  <span className="font-semibold">모집 마감일</span>
+                  <input
+                    type="date"
+                    value={formDeadline}
+                    onChange={(e) => setFormDeadline(e.target.value)}
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="grid gap-1 text-sm">
+                  <span className="font-semibold">프로젝트 마감일</span>
+                  <input
+                    type="date"
+                    value={formEndDate}
+                    onChange={(e) => setFormEndDate(e.target.value)}
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                onClick={closeEditModal}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold hover:bg-gray-50"
+              >
+                취소
+              </button>
+              <button
+                onClick={onSaveEdit}
+                disabled={editSubmitting}
+                className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-60"
+              >
+                {editSubmitting ? "저장 중..." : "저장"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
