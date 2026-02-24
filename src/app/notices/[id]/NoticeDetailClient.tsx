@@ -2,76 +2,69 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { apiGetNotice } from "@/lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, Eye, ThumbsUp } from "lucide-react";
 
-type Notice = {
-  id: string;
-  title: string;
-  titleJp?: string;
-  content: string;
-  contentJp?: string;
-  createdAt: string;
-  authorName: string;
-  pinned: boolean;
-};
-
-function normalizeNotice(raw: any): Notice {
-  return {
-    id: String(raw?.id ?? raw?.noticeId ?? ""),
-    title: String(raw?.title ?? ""),
-    titleJp: raw?.titleJp ?? raw?.titleJa ?? raw?.titleJP,
-    content: String(raw?.content ?? raw?.body ?? ""),
-    contentJp: raw?.contentJp ?? raw?.contentJa ?? raw?.contentJP,
-    createdAt: String(raw?.createdAt ?? raw?.created_at ?? new Date().toISOString()),
-    authorName: String(raw?.authorName ?? raw?.author?.nickname ?? raw?.author ?? ""),
-    pinned: Boolean(raw?.pinned ?? raw?.isPinned ?? false),
-  };
-}
-
-function formatRelativeTime(iso: string) {
-  const d = new Date(iso).getTime();
-  const now = Date.now();
-  const diff = Math.max(0, now - d);
-
-  const min = Math.floor(diff / 60000);
-  if (min < 1) return "방금 전";
-  if (min < 60) return `${min}분 전`;
-
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}시간 전`;
-
-  const day = Math.floor(hr / 24);
-  return `${day}일 전`;
-}
+import { useI18n } from "@/lib/i18n";
+import { fetchCurrentUser, getCurrentUser, saveCurrentUser } from "@/lib/auth";
+import { apiGetNotice, apiToggleNoticeLike, type NoticeDetail } from "@/lib/noticeApi";
 
 function formatFullDate(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(
-    d.getDate(),
-  ).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(
-    d.getMinutes(),
-  ).padStart(2, "0")}`;
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(
+    2,
+    "0",
+  )} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-function Divider() {
-  return <div className="h-px w-full bg-gray-100" />;
+async function resolveUserId(): Promise<string | null> {
+  const cached = getCurrentUser();
+  if (cached?.id) return cached.id;
+
+  try {
+    const u = await fetchCurrentUser();
+    if (u?.id) {
+      saveCurrentUser(u);
+      return u.id;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
 }
 
-/**
- * NOTE:
- * - 기존 localStorage 기반 공지 상세 로직 제거
- * - API(GET /notices/:id) 응답 기반 렌더링
- */
+function normalizeNotice(raw: any): NoticeDetail {
+  return {
+    id: String(raw?.id ?? raw?.noticeId ?? ""),
+    pinned: Boolean(raw?.pinned ?? false),
+    titleOriginal: raw?.titleOriginal,
+    contentOriginal: raw?.contentOriginal,
+    title: raw?.title ?? raw?.titleOriginal ?? raw?.i18n?.[0]?.title ?? "",
+    content: raw?.content ?? raw?.contentOriginal ?? raw?.i18n?.[0]?.content ?? "",
+    createdAt: String(raw?.createdAt ?? new Date().toISOString()),
+    updatedAt: raw?.updatedAt ? String(raw.updatedAt) : undefined,
+    viewCount: Number(raw?.viewCount ?? 0),
+    likeCount: typeof raw?.likeCount === "number" ? raw.likeCount : undefined,
+    author: raw?.author,
+    i18n: raw?.i18n,
+  };
+}
+
 export default function NoticeDetailClient() {
   const params = useParams();
   const router = useRouter();
+  const { tr } = useI18n();
+
   const noticeId = String((params as any)?.id ?? "");
 
-  const [notice, setNotice] = useState<Notice | null>(null);
+  const [notice, setNotice] = useState<NoticeDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [liking, setLiking] = useState(false);
+  const [likedByMe, setLikedByMe] = useState(false);
+  const [localLikeCount, setLocalLikeCount] = useState(0);
 
   useEffect(() => {
     if (!noticeId) return;
@@ -82,12 +75,13 @@ export default function NoticeDetailClient() {
       setError(null);
       try {
         const res = await apiGetNotice(noticeId);
-
-        // 백엔드가 { data: {...} }로 감싸서 줄 수도 있어 방어
-        const raw = res?.data && typeof res.data === "object" ? res.data : res;
+        const raw = (res as any)?.data && typeof (res as any).data === "object" ? (res as any).data : res;
         const normalized = normalizeNotice(raw);
 
-        if (mounted) setNotice(normalized);
+        if (mounted) {
+          setNotice(normalized);
+          setLocalLikeCount(Number(normalized.likeCount ?? 0));
+        }
       } catch (e: any) {
         if (mounted) setError(e?.message ?? "Failed to load notice");
       } finally {
@@ -100,82 +94,140 @@ export default function NoticeDetailClient() {
     };
   }, [noticeId]);
 
+  const title = useMemo(() => notice?.title ?? notice?.titleOriginal ?? "", [notice]);
+  const content = useMemo(() => notice?.content ?? notice?.contentOriginal ?? "", [notice]);
+
+  async function onLikeClick() {
+    if (!noticeId) return;
+    setLiking(true);
+
+    try {
+      const userId = await resolveUserId();
+      if (!userId) {
+        alert(tr("로그인이 필요합니다.", "ログインが必要です。"));
+        return;
+      }
+
+      const res = await apiToggleNoticeLike(noticeId);
+
+      // 1) 엔드포인트 없으면 UI만 토글 (allow404)
+      if (!res) {
+        setLikedByMe((prev) => !prev);
+        setLocalLikeCount((prev) => Math.max(0, prev + (!likedByMe ? 1 : -1)));
+        return;
+      }
+
+      // 2) 서버가 likeCount/liked를 주면 사용
+      const raw = (res as any)?.data && typeof (res as any).data === "object" ? (res as any).data : res;
+      const serverCount =
+        typeof raw?.likeCount === "number" ? raw.likeCount : typeof raw?.likes === "number" ? raw.likes : undefined;
+      const serverLiked =
+        typeof raw?.liked === "boolean" ? raw.liked : typeof raw?.isLiked === "boolean" ? raw.isLiked : undefined;
+
+      if (typeof serverCount === "number") setLocalLikeCount(serverCount);
+      if (typeof serverLiked === "boolean") setLikedByMe(serverLiked);
+
+      if (typeof serverCount !== "number" && typeof serverLiked !== "boolean") {
+        setLikedByMe((prev) => !prev);
+        setLocalLikeCount((prev) => Math.max(0, prev + (!likedByMe ? 1 : -1)));
+      }
+    } catch (e: any) {
+      alert(e?.message ?? tr("좋아요 처리에 실패했습니다.", "いいね処理に失敗しました。"));
+    } finally {
+      setLiking(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-white">
-      <div className="mx-auto w-full max-w-[960px] px-6 lg:px-10 py-6">
-        <div className="mb-4 flex items-center justify-between gap-4">
+      <div className="mx-auto w-full max-w-[980px] px-6 lg:px-10 py-6">
+        <div className="mb-4 flex items-center justify-between">
+          {/* ✅ 항상 목록으로 이동하도록 고정 */}
           <button
             type="button"
-            onClick={() => router.back()}
-            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition"
+            onClick={() => router.push("/notices")}
+            className="group inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
           >
-            ← 뒤로
+            <ArrowLeft size={16} className="text-gray-500 group-hover:text-gray-700" />
+            {tr("목록", "一覧")}
           </button>
 
-          <Link
-            href="/notices"
-            className="text-sm font-semibold text-gray-700 hover:text-gray-900"
-          >
-            목록으로
+          <Link href="/notices" className="text-sm font-semibold text-gray-700 hover:text-gray-900">
+            {tr("공지 목록", "お知らせ一覧")}
           </Link>
         </div>
 
-        <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+        <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
           {loading ? (
-            <div className="p-8">
-              <p className="text-sm text-gray-700">불러오는 중...</p>
-            </div>
+            <p className="text-sm text-gray-500">{tr("불러오는 중...", "読み込み中...")}</p>
           ) : error ? (
-            <div className="p-8">
-              <p className="text-sm text-red-600">공지사항을 불러오지 못했습니다.</p>
+            <>
+              <p className="text-sm font-semibold text-red-600">{tr("공지사항을 불러오지 못했습니다.", "読み込みに失敗しました。")}</p>
               <p className="mt-2 text-xs text-gray-500 break-words">{error}</p>
-            </div>
-          ) : !notice || !notice.id ? (
-            <div className="p-8">
-              <p className="text-sm text-gray-700">공지사항이 존재하지 않습니다.</p>
-            </div>
+            </>
+          ) : !notice?.id ? (
+            <p className="text-sm text-gray-500">{tr("공지사항이 존재하지 않습니다.", "お知らせがありません。")}</p>
           ) : (
             <>
-              {/* Header */}
-              <div className="p-6">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      {notice.pinned ? (
-                        <span className="inline-flex items-center rounded-md bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700">
-                          고정
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {notice.pinned ? (
+                      <span className="inline-flex items-center rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
+                        {tr("업데이트", "アップデート")}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                        {tr("서비스", "サービス")}
+                      </span>
+                    )}
+                  </div>
+
+                  <h1 className="mt-3 text-2xl font-extrabold text-gray-900">{title}</h1>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                    <span className="font-semibold text-gray-700">{notice.author?.nickname ?? tr("작성자", "作成者")}</span>
+                    <span className="text-gray-300">|</span>
+                    <span>{formatFullDate(notice.createdAt)}</span>
+                    {notice.updatedAt ? (
+                      <>
+                        <span className="text-gray-300">|</span>
+                        <span>
+                          {tr("수정", "更新")}: {formatFullDate(notice.updatedAt)}
                         </span>
-                      ) : null}
-                      <span className="text-xs text-gray-500">
-                        {formatRelativeTime(notice.createdAt)}
-                      </span>
-                    </div>
-
-                    <h1 className="mt-3 text-xl font-semibold text-gray-900">
-                      {notice.title}
-                    </h1>
-
-                    <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                      <span className="font-semibold text-gray-700">
-                        {notice.authorName}
-                      </span>
-                      <span>·</span>
-                      <span>{formatFullDate(notice.createdAt)}</span>
-                    </div>
+                      </>
+                    ) : null}
                   </div>
                 </div>
-              </div>
 
-              <Divider />
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 text-xs text-gray-600">
+                    <Eye size={16} className="text-gray-400" />
+                    <span>{notice.viewCount}</span>
+                  </div>
 
-              {/* Body */}
-              <div className="p-6">
-                <div className="prose max-w-none">
-                  <p className="whitespace-pre-wrap text-sm leading-6 text-gray-800">
-                    {notice.content}
-                  </p>
+                  <button
+                    type="button"
+                    onClick={onLikeClick}
+                    disabled={liking}
+                    className={[
+                      "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition",
+                      liking ? "border-gray-200 text-gray-400" : "border-gray-200 text-gray-700 hover:bg-gray-50",
+                    ].join(" ")}
+                  >
+                    <ThumbsUp
+                      size={16}
+                      className={likedByMe || localLikeCount > 0 ? "text-blue-600" : "text-gray-400"}
+                    />
+                    {tr("좋아요", "いいね")}
+                    <span className="text-gray-400">({localLikeCount})</span>
+                  </button>
                 </div>
               </div>
+
+              <div className="my-6 h-px w-full bg-gray-100" />
+
+              <div className="whitespace-pre-wrap text-sm leading-7 text-gray-800">{content}</div>
             </>
           )}
         </div>
