@@ -4,6 +4,7 @@ import { Providers } from "./providers";
 
 import Header from "./components/Header";
 import Footer from "./components/Footer";
+import ChatWidget from "./components/ChatWidget";
 
 export const metadata: Metadata = {
   title: "Sync Up",
@@ -15,10 +16,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ko">
       <body className="min-h-screen">
         <Providers>
-          <Header />
-          <div className="pt-20 min-h-screen flex flex-col">
+          <div className="min-h-screen flex flex-col">
+            <div className="sticky top-0 z-50 bg-white border-b border-gray-200">
+              <Header />
+            </div>
+
             <main className="flex-1">{children}</main>
             <Footer />
+
+            {/* ✅ 전역 채팅 위젯 */}
+            <ChatWidget />
           </div>
         </Providers>
       </body>
