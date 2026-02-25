@@ -133,6 +133,17 @@ export default function ChatWidget() {
 
   const BACKEND_URL = "http://localhost:3001";
 
+  // ✅ 로그인한 상태에서만 채팅 위젯 노출
+  const [isAuthed, setIsAuthed] = useState(false);
+  useEffect(() => {
+    const sync = () => setIsAuthed(Boolean(getAccessToken()));
+    sync();
+    window.addEventListener("auth:changed", sync);
+    return () => {
+      window.removeEventListener("auth:changed", sync);
+    };
+  }, []);
+
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<ChatTab>("project");
 
@@ -173,6 +184,11 @@ export default function ChatWidget() {
   useEffect(() => {
     let mounted = true;
     (async () => {
+      if (!isAuthed) {
+        if (!mounted) return;
+        setMyId(null);
+        return;
+      }
       const id = await fetchMyId();
       if (!mounted) return;
       setMyId(id);
@@ -180,7 +196,25 @@ export default function ChatWidget() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [isAuthed]);
+
+  useEffect(() => {
+    // 로그아웃 시: 열려있던 패널 닫고 소켓 정리
+    if (isAuthed) return;
+    setOpen(false);
+    setJoinStatus("idle");
+    setJoinError(null);
+    setUserCount(0);
+    setTypingUsers({});
+    setMessages([]);
+
+    if (socketRef.current) {
+      try {
+        socketRef.current.disconnect();
+      } catch {}
+      socketRef.current = null;
+    }
+  }, [isAuthed]);
 
   useEffect(() => {
     if (!open) return;
@@ -333,6 +367,9 @@ export default function ChatWidget() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tab, canUseProjectChat]);
 
+  // 로그인하지 않은 상태에서는 위젯 자체를 렌더링하지 않음
+  if (!isAuthed) return null;
+
   return (
     <>
       {/* Floating Button */}
@@ -376,7 +413,6 @@ export default function ChatWidget() {
         <div
           ref={panelRef}
           className={cn(
-            // ✅ bottom/top로 높이를 자동 계산해서 하단이 절대 잘리지 않게
             "fixed z-[70] right-6 bottom-24 top-24",
             "w-[420px] max-w-[calc(100vw-48px)]",
             "rounded-2xl bg-white shadow-2xl border border-gray-200 overflow-hidden",
@@ -452,9 +488,8 @@ export default function ChatWidget() {
             ) : null}
           </div>
 
-          {/* Body: ✅ 고정 높이 계산 제거하고 flex-1로 */}
+          {/* Body */}
           <div className="flex-1 bg-gray-50 flex flex-col min-h-0">
-            {/* Title bar */}
             <div className="px-4 py-3 border-b border-gray-200 bg-white">
               <div className="text-sm font-extrabold text-gray-900 truncate">
                 {tab === "project" ? "프로젝트 채팅" : "개인 채팅(준비중)"}
@@ -462,7 +497,6 @@ export default function ChatWidget() {
               {typingText ? <div className="mt-1 text-xs text-gray-500">{typingText}</div> : null}
             </div>
 
-            {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
               {tab === "dm" ? (
                 <div className="text-sm text-gray-500 text-center py-16">
@@ -487,7 +521,6 @@ export default function ChatWidget() {
               )}
             </div>
 
-            {/* Input */}
             <div className="p-3 border-t border-gray-200 bg-white">
               <div className="flex items-center gap-2">
                 <input

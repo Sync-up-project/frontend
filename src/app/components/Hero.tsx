@@ -15,7 +15,7 @@ export default function Hero() {
       router.push("/login");
       return;
     }
-    router.push("/projects/new");
+    router.push("/projects/create");
   }
 
   function handleJoinProject() {

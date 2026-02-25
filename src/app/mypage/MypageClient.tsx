@@ -1,10 +1,12 @@
-// src/app/mypage/MyPageClient.tsx
 "use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
-import { getAccessToken } from "@/lib/auth";
+import { getAccessToken, fetchCurrentUser } from "@/lib/auth";
+import { apiGetProjectsList, pickArray } from "@/lib/api";
+import { alertAndGoLogin } from "@/lib/requireLogin";
 
 type UserMe = {
   id: string;
@@ -16,6 +18,7 @@ type UserMe = {
   github?: {
     username?: string | null;
     connected?: boolean;
+    url?: string | null;
   } | null;
 };
 
@@ -41,13 +44,21 @@ function formatDateKR(iso?: string | null) {
   return `${y}. ${m}. ${day}.`;
 }
 
+function initialsFromName(name?: string | null) {
+  const s = (name ?? "").trim();
+  if (!s) return "U";
+  const parts = s.split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
 function normalizeRole(role?: string | null) {
-  const r = (role ?? "").toLowerCase();
+  const r = String(role ?? "").toUpperCase();
   if (!r) return "개발자";
-  if (r.includes("dev")) return "개발자";
-  if (r.includes("designer")) return "디자이너";
-  if (r.includes("pm")) return "기획";
-  return role ?? "개발자";
+  if (r === "DEV" || r.includes("DEV") || r.includes("DEVELOPER")) return "개발자";
+  if (r === "DESIGN" || r.includes("DESIGN")) return "디자이너";
+  if (r === "PM" || r.includes("PM") || r.includes("PLAN")) return "기획";
+  return String(role ?? "개발자");
 }
 
 function normalizeCountry(country?: string | null) {
@@ -57,70 +68,24 @@ function normalizeCountry(country?: string | null) {
   return c;
 }
 
-function initialsFromName(name?: string | null) {
-  const s = (name ?? "").trim();
-  if (!s) return "U";
-  const parts = s.split(/\s+/);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
-}
+function getOwnerIdFromProject(p: any): string | null {
+  const candidates = [
+    p?.ownerId,
+    p?.leaderId,
+    p?.creatorId,
+    p?.createdById,
+    p?.hostUserId,
+    p?.userId,
+    p?.owner?.id,
+    p?.creator?.id,
+    p?.createdBy?.id,
+  ];
 
-async function fetchAuthMe(): Promise<UserMe> {
-  const token = getAccessToken();
-  if (!token) {
-    return {
-      id: "guest",
-      nickname: "Guest",
-      email: "-",
-      role: "developer",
-      country: "대한민국 (KR)",
-      createdAt: null,
-      github: { username: null, connected: false },
-    };
+  for (const v of candidates) {
+    if (typeof v === "string" && v.trim()) return v;
+    if (typeof v === "number" && Number.isFinite(v)) return String(v);
   }
-
-  const res = await fetch("http://localhost:3001/auth/me", {
-    headers: { Authorization: `Bearer ${token}` },
-    credentials: "include",
-  });
-
-  if (!res.ok) {
-    return {
-      id: "unknown",
-      nickname: "User",
-      email: "-",
-      role: "developer",
-      country: "대한민국 (KR)",
-      createdAt: null,
-      github: { username: null, connected: false },
-    };
-  }
-
-  const json = await res.json();
-
-  const nickname = json?.nickname ?? json?.user?.nickname ?? json?.profile?.nickname ?? null;
-  const email = json?.email ?? json?.user?.email ?? null;
-  const role = json?.role ?? json?.user?.role ?? null;
-  const country = json?.country ?? json?.user?.country ?? null;
-  const createdAt = json?.createdAt ?? json?.user?.createdAt ?? null;
-
-  const gh =
-    json?.github ??
-    json?.user?.github ??
-    (json?.githubUsername ? { username: json.githubUsername, connected: true } : null);
-
-  return {
-    id: String(json?.id ?? json?.user?.id ?? "me"),
-    nickname,
-    email,
-    role,
-    country,
-    createdAt,
-    github: {
-      username: gh?.username ?? null,
-      connected: Boolean(gh?.connected ?? gh?.username),
-    },
-  };
+  return null;
 }
 
 function StatCard({ value, label }: { value: string | number; label: string }) {
@@ -143,28 +108,27 @@ function SectionTitle({ title, right }: { title: string; right?: React.ReactNode
 
 function ProjectMiniCard({ p }: { p: ProjectCard }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-3.5 shadow-sm hover:shadow-md transition-shadow">
+    <Link
+      href={`/projects/${encodeURIComponent(p.id)}`}
+      className="block rounded-2xl border border-gray-200 bg-white p-3.5 shadow-sm hover:shadow-md transition-shadow focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm font-extrabold text-gray-900 truncate">{p.title}</div>
-          {p.subtitle ? (
-            <div className="mt-1 text-xs text-gray-600 line-clamp-2">{p.subtitle}</div>
-          ) : null}
+          {p.subtitle ? <div className="mt-1 text-xs text-gray-600 line-clamp-2">{p.subtitle}</div> : null}
         </div>
-        <Link
-          href={`/projects/${encodeURIComponent(p.id)}`}
-          className="shrink-0 rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50"
-        >
+
+        <span className="shrink-0 rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700">
           상세
-        </Link>
+        </span>
       </div>
 
       <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500">
-        <span>{p.statsText ?? "참여 신청: 0개 · 채팅: 0개"}</span>
+        <span>{p.statsText ?? "모집/참여 정보 없음"}</span>
         <span className="text-gray-300">·</span>
         <span>{p.dateText ?? "-"}</span>
       </div>
-    </div>
+    </Link>
   );
 }
 
@@ -187,12 +151,12 @@ function ActivityBars({ values }: { values: number[] }) {
                 v === 0
                   ? "bg-gray-200"
                   : v === 1
-                    ? "bg-green-200"
-                    : v === 2
-                      ? "bg-green-300"
-                      : v === 3
-                        ? "bg-green-400"
-                        : "bg-green-500"
+                  ? "bg-green-200"
+                  : v === 2
+                  ? "bg-green-300"
+                  : v === 3
+                  ? "bg-green-400"
+                  : "bg-green-500"
               )}
               style={{ height: `${h}px` }}
               aria-label={`day-${i}-${v}`}
@@ -210,36 +174,26 @@ function ActivityBars({ values }: { values: number[] }) {
   );
 }
 
-export default function MyPageClient() {
+export default function MypageClient() {
   const { tr } = useI18n();
+  const router = useRouter();
 
   const [me, setMe] = useState<UserMe | null>(null);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const githubStats = useMemo(() => {
-    return {
+  const [myCreatedProjects, setMyCreatedProjects] = useState<ProjectCard[]>([]);
+  const [myAppliedProjects] = useState<ProjectCard[]>([]);
+
+  const githubStats = useMemo(
+    () => ({
       totalCommits: 0,
-      publicRepos: 1,
+      publicRepos: 0,
       last7days: 0,
       last30days: 0,
-    };
-  }, []);
-
-  const myCreatedProjects = useMemo<ProjectCard[]>(() => {
-    return [
-      {
-        id: "sample-1",
-        title: "캡스톤 디자인 같이하실분 모집합니다",
-        subtitle: "백엔드 전문가분을 찾습니다",
-        statsText: "참여 신청: 0개 · 채팅: 0개",
-        dateText: "2025. 12. 7.",
-      },
-    ];
-  }, []);
-
-  const myAppliedProjects = useMemo<ProjectCard[]>(() => {
-    return [];
-  }, []);
+    }),
+    []
+  );
 
   const counters = useMemo(() => {
     return {
@@ -259,36 +213,93 @@ export default function MyPageClient() {
 
     async function run() {
       setLoading(true);
-      const data = await fetchAuthMe();
-      if (!mounted) return;
-      setMe(data);
-      setLoading(false);
+      setErrorMsg(null);
+
+      const token = getAccessToken();
+      if (!token) {
+        if (!mounted) return;
+        alertAndGoLogin(router, tr("로그인이 필요한 기능입니다.", "ログインが必要な機能です。"));
+        return;
+      }
+
+      try {
+        const user = await fetchCurrentUser();
+        const built: UserMe = {
+          id: String(user.id),
+          nickname: user.nickname ?? "User",
+          email: user.email ?? "-",
+          role: user.role ?? "DEV",
+          country: (user as any)?.country ?? null,
+          createdAt: (user as any)?.createdAt ?? null,
+          github: (user as any)?.github ?? null,
+        };
+
+        const listRes = await apiGetProjectsList();
+        const all = pickArray<any>(listRes);
+
+        const myId = String(built.id);
+        const mine = all.filter((p) => {
+          const ownerId = getOwnerIdFromProject(p);
+          return ownerId ? String(ownerId) === myId : false;
+        });
+
+        const mapped: ProjectCard[] = mine.map((p) => ({
+          id: String(p?.id ?? ""),
+          title: String(p?.titleOriginal ?? p?.title ?? "-"),
+          subtitle: String(p?.summaryOriginal ?? p?.summary ?? p?.description ?? ""),
+          dateText: formatDateKR(p?.createdAt ?? null),
+          statsText: `모집정원: ${Number(p?.capacity ?? 0) || 0}명`,
+        }));
+
+        if (!mounted) return;
+        setMe(built);
+        setMyCreatedProjects(mapped);
+      } catch (e: any) {
+        if (!mounted) return;
+        setErrorMsg(e?.message ?? "마이페이지 데이터를 불러오지 못했습니다.");
+        setMe(null);
+        setMyCreatedProjects([]);
+      } finally {
+        if (!mounted) return;
+        setLoading(false);
+      }
     }
 
     run();
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [router, tr]);
 
   const nickname = me?.nickname ?? "User";
   const email = me?.email ?? "-";
   const role = normalizeRole(me?.role);
   const country = normalizeCountry(me?.country);
   const joined = formatDateKR(me?.createdAt);
+
   const ghConnected = Boolean(me?.github?.connected);
-  const ghUsername = me?.github?.username ?? "HB-KWon";
+  const ghUsername = ghConnected ? me?.github?.username ?? tr("알 수 없음", "不明") : tr("미연동", "未連携");
+  const ghUrl =
+    ghConnected && me?.github?.url
+      ? me.github.url
+      : ghConnected && me?.github?.username
+      ? `https://github.com/${me.github.username}`
+      : "#";
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ✅ 최대한 작게: max폭/패딩 축소 */}
       <div className="max-w-6xl mx-auto px-6 py-3">
-        {/* ✅ 요청: '프로젝트 목록' 버튼 제거 */}
         <div className="mt-2">
           <h1 className="text-xl font-extrabold text-gray-900">{tr("마이페이지", "マイページ")}</h1>
         </div>
 
-        {/* ✅ 카드 위 여백 축소 */}
+        {errorMsg ? (
+          <div className="mt-3 rounded-2xl border border-red-200 bg-white p-4 text-sm text-red-700 shadow-sm">
+            {tr("마이페이지 데이터를 불러오지 못했습니다.", "読み込みに失敗しました。")}
+            <div className="mt-1 text-xs text-red-600 break-words">{errorMsg}</div>
+          </div>
+        ) : null}
+
         <div className="mt-3 rounded-3xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="flex items-start justify-between gap-5">
             <div className="flex items-center gap-3.5">
@@ -358,8 +369,10 @@ export default function MyPageClient() {
                     GH
                   </div>
                   <div className="min-w-0">
-                    <div className="text-sm font-extrabold text-gray-900 truncate">{ghUsername}</div>
-                    <div className="text-[11px] text-gray-500 truncate">github.com/{ghUsername}</div>
+                    <div className="text-sm font-extrabold text-gray-900 truncate">
+                      {ghConnected ? ghUsername : tr("미연동", "未連携")}
+                    </div>
+                    <div className="text-[11px] text-gray-500 truncate">{ghConnected ? `github.com/${ghUsername}` : "-"}</div>
                   </div>
                 </div>
               </div>
@@ -375,7 +388,7 @@ export default function MyPageClient() {
                 </span>
 
                 <Link
-                  href={ghConnected ? "#" : "/auth/github"}
+                  href={ghConnected ? ghUrl : "/auth/github"}
                   className={cn(
                     "inline-flex items-center justify-center rounded-xl px-4 py-2 text-[11px] font-extrabold transition-colors",
                     ghConnected
@@ -383,7 +396,7 @@ export default function MyPageClient() {
                       : "bg-gray-900 text-white hover:bg-gray-800"
                   )}
                 >
-                  {ghConnected ? tr("연동 관리", "管理") : tr("연동하기", "連携하기")}
+                  {ghConnected ? tr("GitHub 보기", "GitHubを見る") : tr("연동하기", "連携하기")}
                 </Link>
               </div>
             </div>
@@ -416,7 +429,7 @@ export default function MyPageClient() {
             title={`${tr("내가 생성한 프로젝트", "作成したプロジェクト")} (${myCreatedProjects.length})`}
             right={
               <Link
-                href="/projects/new"
+                href="/projects/create"
                 className="inline-flex items-center justify-center rounded-2xl bg-indigo-600 px-4 py-2 text-xs font-extrabold text-white hover:bg-indigo-500 transition-colors"
               >
                 {tr("프로젝트 생성", "作成")}
@@ -425,7 +438,11 @@ export default function MyPageClient() {
           />
 
           <div className="mt-2 grid grid-cols-1 gap-2.5 md:grid-cols-2">
-            {myCreatedProjects.length > 0 ? (
+            {loading ? (
+              <div className="rounded-2xl border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm">
+                {tr("불러오는 중...", "読み込み中...")}
+              </div>
+            ) : myCreatedProjects.length > 0 ? (
               myCreatedProjects.map((p) => <ProjectMiniCard key={p.id} p={p} />)
             ) : (
               <div className="rounded-2xl border border-gray-200 bg-white p-5 text-sm text-gray-600 shadow-sm">
@@ -436,9 +453,7 @@ export default function MyPageClient() {
         </div>
 
         <div className="mt-6">
-          <SectionTitle
-            title={`${tr("내가 신청한 프로젝트", "申請したプロジェクト")} (${myAppliedProjects.length})`}
-          />
+          <SectionTitle title={`${tr("내가 신청한 프로젝트", "申請したプロジェクト")} (${myAppliedProjects.length})`} />
 
           <div className="mt-2">
             {myAppliedProjects.length > 0 ? (

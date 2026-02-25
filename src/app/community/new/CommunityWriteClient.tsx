@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useI18n } from "@/lib/i18n";
 import { apiPostCommunityPost } from "@/lib/api";
-import { fetchCurrentUser, getCurrentUser, saveCurrentUser } from "@/lib/auth";
+import { fetchCurrentUser, getAccessToken, getCurrentUser, saveCurrentUser } from "@/lib/auth";
 
 type Category = "free" | "question" | "share" | "review";
 
@@ -41,6 +41,14 @@ export default function CommunityWriteClient() {
   const searchParams = useSearchParams();
   const { tr, lang } = useI18n();
 
+  // ✅ 비로그인 직접 접근 차단: 알림 → 로그인 이동
+  useEffect(() => {
+    if (!getAccessToken()) {
+      alert(tr("로그인이 필요한 기능입니다.", "ログインが必要な機能です。"));
+      router.replace("/login");
+    }
+  }, [router, tr]);
+
   const initialCategory = useMemo<Category>(() => {
     const q = searchParams.get("category");
     return isCategory(q) ? q : "free";
@@ -64,17 +72,24 @@ export default function CommunityWriteClient() {
     return Array.from(new Set(raw)).slice(0, 10);
   }, [tagsInput]);
 
-  const canSubmit =
-    title.trim().length > 0 && content.trim().length > 0 && !submitting;
+  const canSubmit = title.trim().length > 0 && content.trim().length > 0 && !submitting;
 
   async function onSubmit() {
     if (!canSubmit) return;
+
+    // ✅ 클릭 시점에도 방어 (토큰이 중간에 사라졌을 수도 있으니)
+    if (!getAccessToken()) {
+      alert(tr("로그인이 필요한 기능입니다.", "ログインが必要な機能です。"));
+      router.replace("/login");
+      return;
+    }
 
     setSubmitting(true);
     try {
       const authorId = await resolveAuthorId();
       if (!authorId) {
-        alert(tr("로그인이 필요합니다.", "ログインが必要です。"));
+        alert(tr("로그인이 필요한 기능입니다.", "ログインが必要な機能です。"));
+        router.replace("/login");
         return;
       }
 
@@ -90,7 +105,8 @@ export default function CommunityWriteClient() {
         originalLang,
       });
 
-      const raw = (res as any)?.data && typeof (res as any).data === "object" ? (res as any).data : res;
+      const raw =
+        (res as any)?.data && typeof (res as any).data === "object" ? (res as any).data : res;
       const id = (raw as any)?.id ?? (raw as any)?.postId;
 
       if (id) router.push(`/community/${id}`);
@@ -107,9 +123,7 @@ export default function CommunityWriteClient() {
       <div className="mx-auto w-full max-w-[960px] px-6 lg:px-10 py-6">
         <div className="mb-4 flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-extrabold text-gray-900">
-              {tr("글쓰기", "投稿")}
-            </h1>
+            <h1 className="text-2xl font-extrabold text-gray-900">{tr("글쓰기", "投稿")}</h1>
             <p className="mt-1 text-sm text-gray-500">
               {tr("카테고리를 선택하고 글을 작성하세요.", "カテゴリを選んで投稿してください。")}
             </p>
@@ -128,9 +142,7 @@ export default function CommunityWriteClient() {
               disabled={!canSubmit}
               className={[
                 "rounded-xl px-4 py-2 text-sm font-semibold text-white",
-                canSubmit
-                  ? "bg-gray-900 hover:bg-gray-800"
-                  : "bg-gray-300 cursor-not-allowed",
+                canSubmit ? "bg-gray-900 hover:bg-gray-800" : "bg-gray-300 cursor-not-allowed",
               ].join(" ")}
             >
               {submitting ? tr("저장 중...", "保存中...") : tr("등록", "投稿")}
@@ -139,9 +151,7 @@ export default function CommunityWriteClient() {
         </div>
 
         <div className="rounded-2xl border border-gray-200 bg-white p-4">
-          <label className="block text-sm font-semibold text-gray-900">
-            {tr("카테고리", "カテゴリ")}
-          </label>
+          <label className="block text-sm font-semibold text-gray-900">{tr("카테고리", "カテゴリ")}</label>
 
           <div className="mt-2 flex flex-wrap gap-2">
             {CATEGORIES.map((c) => (
@@ -162,9 +172,7 @@ export default function CommunityWriteClient() {
           </div>
 
           <div className="mt-6">
-            <label className="block text-sm font-semibold text-gray-900">
-              {tr("제목", "タイトル")}
-            </label>
+            <label className="block text-sm font-semibold text-gray-900">{tr("제목", "タイトル")}</label>
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -174,9 +182,7 @@ export default function CommunityWriteClient() {
           </div>
 
           <div className="mt-6">
-            <label className="block text-sm font-semibold text-gray-900">
-              {tr("내용", "内容")}
-            </label>
+            <label className="block text-sm font-semibold text-gray-900">{tr("내용", "内容")}</label>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
@@ -186,9 +192,7 @@ export default function CommunityWriteClient() {
           </div>
 
           <div className="mt-6">
-            <label className="block text-sm font-semibold text-gray-900">
-              {tr("태그(쉼표로 구분)", "タグ(カンマ区切り)")}
-            </label>
+            <label className="block text-sm font-semibold text-gray-900">{tr("태그(쉼표로 구분)", "タグ(カンマ区切り)")}</label>
             <input
               value={tagsInput}
               onChange={(e) => setTagsInput(e.target.value)}
@@ -198,10 +202,7 @@ export default function CommunityWriteClient() {
             {tags.length > 0 ? (
               <div className="mt-2 flex flex-wrap gap-2">
                 {tags.map((t) => (
-                  <span
-                    key={t}
-                    className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600"
-                  >
+                  <span key={t} className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">
                     #{t}
                   </span>
                 ))}
@@ -216,9 +217,7 @@ export default function CommunityWriteClient() {
               disabled={!canSubmit}
               className={[
                 "rounded-xl px-5 py-3 text-sm font-semibold text-white",
-                canSubmit
-                  ? "bg-gray-900 hover:bg-gray-800"
-                  : "bg-gray-300 cursor-not-allowed",
+                canSubmit ? "bg-gray-900 hover:bg-gray-800" : "bg-gray-300 cursor-not-allowed",
               ].join(" ")}
             >
               {submitting ? tr("저장 중...", "保存中...") : tr("등록", "投稿")}
