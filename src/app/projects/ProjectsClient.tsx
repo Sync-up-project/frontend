@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { useI18n } from "@/lib/i18n";
 import { getAccessToken } from "@/lib/auth";
@@ -92,6 +93,7 @@ const ENABLE_PROJECT_SIDE_API =
 
 export default function ProjectsClient() {
   const { tr } = useI18n();
+  const router = useRouter();
 
   const [filters, setFilters] = useState<FilterState>({
     position: "all",
@@ -102,7 +104,12 @@ export default function ProjectsClient() {
   // Hydration-safe auth flag
   const [isAuthed, setIsAuthed] = useState(false);
   useEffect(() => {
-    setIsAuthed(Boolean(getAccessToken()));
+    const sync = () => setIsAuthed(Boolean(getAccessToken()));
+    sync();
+    window.addEventListener("auth:changed", sync);
+    return () => {
+      window.removeEventListener("auth:changed", sync);
+    };
   }, []);
 
   // Main list data
@@ -276,6 +283,15 @@ export default function ProjectsClient() {
     [totalPages]
   );
 
+  function requireLoginThen(to: string) {
+    if (isAuthed) {
+      router.push(to);
+      return;
+    }
+    alert(tr("로그인이 필요한 기능입니다.", "ログインが必要な機能です。"));
+    router.push("/login");
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-screen-2xl mx-auto px-8 py-10">
@@ -291,18 +307,21 @@ export default function ProjectsClient() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Link
-              href="/projects/manage"
+            <button
+              type="button"
+              onClick={() => requireLoginThen("/projects/manage")}
               className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
             >
               {tr("프로젝트 관리", "プロジェクト管理")}
-            </Link>
-            <Link
-              href="/projects/create"
+            </button>
+
+            <button
+              type="button"
+              onClick={() => requireLoginThen("/projects/create")}
               className="inline-flex items-center justify-center rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 transition-colors"
             >
               {tr("프로젝트 생성", "プロジェクト作成")}
-            </Link>
+            </button>
           </div>
         </div>
 

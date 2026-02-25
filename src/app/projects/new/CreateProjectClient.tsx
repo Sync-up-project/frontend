@@ -2,11 +2,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useI18n } from "@/lib/i18n";
-import { getCurrentUser } from "@/lib/auth";
+import { getAccessToken, getCurrentUser } from "@/lib/auth";
 
 type StackChip = { id: string; label: string };
 type ToolChip = { id: string; label: string };
@@ -133,6 +133,14 @@ export default function CreateProjectClient() {
   const router = useRouter();
   const { tr, lang } = useI18n();
 
+  // ✅ 비로그인 직접 접근 차단: 알림 → 로그인 이동
+  useEffect(() => {
+    if (!getAccessToken()) {
+      alert(tr("로그인이 필요한 기능입니다.", "ログインが必要な機能です。"));
+      router.replace("/login");
+    }
+  }, [router, tr]);
+
   const [title, setTitle] = useState("");
   const [position, setPosition] = useState<Position>("backend");
   const [count, setCount] = useState<number>(5);
@@ -155,7 +163,10 @@ export default function CreateProjectClient() {
   }, [position, lang]);
 
   const placeholderTitle = useMemo(() => {
-    return tr("예: 실시간 채팅 기반 협업 플랫폼 MVP 모집", "例：リアルタイムチャット型の協業プラットフォームMVP募集");
+    return tr(
+      "예: 실시간 채팅 기반 협업 플랫폼 MVP 모집",
+      "例：リアルタイムチャット型の協業プラットフォームMVP募集"
+    );
   }, [tr]);
 
   const placeholderCount = useMemo(() => tr("예: 5", "例：5"), [tr]);
@@ -177,6 +188,13 @@ export default function CreateProjectClient() {
     setErrorMsg(null);
 
     try {
+      // ✅ 클릭 시점에서도 비로그인 방어
+      if (!getAccessToken()) {
+        alert(tr("로그인이 필요한 기능입니다.", "ログインが必要な機能です。"));
+        router.replace("/login");
+        return;
+      }
+
       if (!title.trim()) {
         setErrorMsg(tr("프로젝트명을 입력해 주세요.", "プロジェクト名を入力してください。"));
         return;
@@ -194,15 +212,17 @@ export default function CreateProjectClient() {
 
       const me = getCurrentUser();
       if (!me?.id) {
-        setErrorMsg(tr("로그인이 필요합니다.", "ログインが必要です。"));
+        // 토큰은 있지만 유저 캐시가 없을 수도 있으므로: 동일 메시지로 처리
+        alert(tr("로그인이 필요한 기능입니다.", "ログインが必要な機能です。"));
+        router.replace("/login");
         return;
       }
 
       const techStacks = mapStacksToLabels(selectedStacks);
 
-      const selectedToolLabels = TOOLS.filter((t) =>
-        selectedTools.includes(t.id)
-      ).map((t) => t.label);
+      const selectedToolLabels = TOOLS.filter((t) => selectedTools.includes(t.id)).map(
+        (t) => t.label
+      );
       const details = [
         body.trim(),
         selectedToolLabels.length > 0
@@ -226,9 +246,7 @@ export default function CreateProjectClient() {
         difficulty: "MEDIUM",
         capacity: Number.isFinite(count) ? Number(count) : 1,
         endDate: projectEndDate ? new Date(projectEndDate).toISOString() : null,
-        deadline: recruitDeadline
-          ? new Date(recruitDeadline).toISOString()
-          : null,
+        deadline: recruitDeadline ? new Date(recruitDeadline).toISOString() : null,
         techStacks,
         positionNeeds: mapPositionNeeds(position),
         // 아래 옵션들은 현재 백엔드 스키마에 없을 가능성이 높아서 일단 전송하지 않습니다.
@@ -252,7 +270,9 @@ export default function CreateProjectClient() {
       <div className="max-w-7xl mx-auto px-8 py-10">
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">{tr("프로젝트 글쓰기", "プロジェクト投稿")}</h1>
+            <h1 className="text-xl font-bold text-gray-900">
+              {tr("프로젝트 글쓰기", "プロジェクト投稿")}
+            </h1>
             <p className="mt-1 text-sm text-gray-600">
               {tr(
                 "필수 정보를 입력한 뒤, 본문에서 프로젝트 소개 및 모집글을 자유롭게 작성해 주세요.",
@@ -289,7 +309,10 @@ export default function CreateProjectClient() {
           <div className="space-y-6">
             <SectionCard title={tr("프로젝트명 (필수)", "プロジェクト名（必須）")}>
               <p className="text-xs text-gray-500 mb-3">
-                {tr("프로젝트를 한 줄로 설명하는 제목을 입력해 주세요.", "プロジェクトを一行で説明するタイトルを入力してください。")}
+                {tr(
+                  "프로젝트를 한 줄로 설명하는 제목을 입력해 주세요.",
+                  "プロジェクトを一行で説明するタイトルを入力してください。"
+                )}
               </p>
               <input
                 value={title}
@@ -301,7 +324,10 @@ export default function CreateProjectClient() {
 
             <SectionCard title={tr("본문", "本文")}>
               <p className="text-xs text-gray-500 mb-3">
-                {tr("프로젝트 소개 및 모집글을 자유롭게 작성해 주세요.", "プロジェクト紹介と募集内容を自由に記入してください。")}
+                {tr(
+                  "프로젝트 소개 및 모집글을 자유롭게 작성해 주세요.",
+                  "プロジェクト紹介と募集内容を自由に記入してください。"
+                )}
               </p>
               <textarea
                 value={body}
