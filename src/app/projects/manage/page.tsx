@@ -16,6 +16,8 @@ type ManagedProject = {
   description: string;
   deadline: string | null;
   endDate: string | null;
+  techStacks: string[];
+  positionNeeds: { position: string; headcount: number }[];
   createdAt: string | null;
   updatedAt: string | null;
   membersCount: number;
@@ -48,6 +50,39 @@ function toInputDate(value?: string | null) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function toCsv(items: string[]) {
+  return items.join(", ");
+}
+
+function parseCsv(value: string) {
+  return value
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
+function positionNeedsToInput(items: { position: string; headcount: number }[]) {
+  return items.map((it) => `${it.position}:${it.headcount}`).join(", ");
+}
+
+function parsePositionNeedsInput(value: string) {
+  return value
+    .split(",")
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+    .map((token) => {
+      const [positionRaw, countRaw] = token.split(":").map((v) => v.trim());
+      const position = (positionRaw || "").toUpperCase();
+      const headcount = Number(countRaw || "1");
+      if (!position) return null;
+      return {
+        position,
+        headcount: Number.isFinite(headcount) && headcount > 0 ? headcount : 1,
+      };
+    })
+    .filter((v): v is { position: string; headcount: number } => Boolean(v));
+}
+
 export default function ProjectManagePage() {
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [items, setItems] = useState<ManagedProject[]>([]);
@@ -66,6 +101,11 @@ export default function ProjectManagePage() {
   const [formCapacity, setFormCapacity] = useState("1");
   const [formDeadline, setFormDeadline] = useState("");
   const [formEndDate, setFormEndDate] = useState("");
+  const [formMode, setFormMode] = useState("ONLINE");
+  const [formDifficulty, setFormDifficulty] = useState("MEDIUM");
+  const [formStatus, setFormStatus] = useState("PLANNING");
+  const [formTechStacks, setFormTechStacks] = useState("");
+  const [formPositionNeeds, setFormPositionNeeds] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -103,6 +143,19 @@ export default function ProjectManagePage() {
           difficulty: String(p?.difficulty ?? "-"),
           deadline: p?.deadline ? String(p.deadline) : null,
           endDate: p?.endDate ? String(p.endDate) : null,
+          techStacks: Array.isArray(p?.techStacks)
+            ? p.techStacks
+                .map((t: any) => String(t?.name ?? t).trim())
+                .filter(Boolean)
+            : [],
+          positionNeeds: Array.isArray(p?.positionNeeds)
+            ? p.positionNeeds
+                .map((pn: any) => ({
+                  position: String(pn?.position ?? "").toUpperCase(),
+                  headcount: Number(pn?.headcount ?? 1) || 1,
+                }))
+                .filter((pn: any) => pn.position)
+            : [],
           createdAt: p?.createdAt ? String(p.createdAt) : null,
           updatedAt: p?.updatedAt ? String(p.updatedAt) : null,
           membersCount: Number(p?.membersCount ?? p?.members_count ?? 0) || 0,
@@ -210,6 +263,11 @@ export default function ProjectManagePage() {
     setFormCapacity(String(item.capacity || 1));
     setFormDeadline(toInputDate(item.deadline));
     setFormEndDate(toInputDate(item.endDate));
+    setFormMode(item.mode || "ONLINE");
+    setFormDifficulty(item.difficulty || "MEDIUM");
+    setFormStatus(item.status || "PLANNING");
+    setFormTechStacks(toCsv(item.techStacks));
+    setFormPositionNeeds(positionNeedsToInput(item.positionNeeds));
     setEditOpen(true);
   }
 
@@ -240,6 +298,11 @@ export default function ProjectManagePage() {
         capacity: Number(formCapacity) > 0 ? Number(formCapacity) : 1,
         deadline: new Date(formDeadline).toISOString(),
         endDate: new Date(formEndDate).toISOString(),
+        mode: formMode,
+        difficulty: formDifficulty,
+        status: formStatus,
+        techStacks: parseCsv(formTechStacks),
+        positionNeeds: parsePositionNeedsInput(formPositionNeeds),
       };
       const res = await fetch(`/api/projects/${editing.id}`, {
         method: "PATCH",
@@ -267,9 +330,23 @@ export default function ProjectManagePage() {
                 summary: updated?.summaryOriginal ?? payload.summaryOriginal,
                 description:
                   updated?.descriptionOriginal ?? payload.descriptionOriginal,
+                mode: updated?.mode ?? payload.mode,
+                difficulty: updated?.difficulty ?? payload.difficulty,
+                status: updated?.status ?? payload.status,
                 capacity: updated?.capacity ?? payload.capacity,
                 deadline: updated?.deadline ?? payload.deadline,
                 endDate: updated?.endDate ?? payload.endDate,
+                techStacks: Array.isArray(updated?.techStacks)
+                  ? updated.techStacks
+                      .map((t: any) => String(t?.techStack?.name ?? t?.name ?? t).trim())
+                      .filter(Boolean)
+                  : payload.techStacks,
+                positionNeeds: Array.isArray(updated?.positionNeeds)
+                  ? updated.positionNeeds.map((pn: any) => ({
+                      position: String(pn?.position ?? "").toUpperCase(),
+                      headcount: Number(pn?.headcount ?? 1) || 1,
+                    }))
+                  : payload.positionNeeds,
                 updatedAt: updated?.updatedAt ?? new Date().toISOString(),
               }
             : it
@@ -363,6 +440,24 @@ export default function ProjectManagePage() {
                       </div>
 
                       <p className="mt-2 text-sm text-gray-600 line-clamp-2">{it.summary}</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {it.techStacks.slice(0, 4).map((stack) => (
+                          <span
+                            key={stack}
+                            className="rounded-full bg-gray-100 px-2 py-1 text-[11px] font-semibold text-gray-700"
+                          >
+                            {stack}
+                          </span>
+                        ))}
+                        {it.positionNeeds.map((pn, idx) => (
+                          <span
+                            key={`${pn.position}-${idx}`}
+                            className="rounded-full bg-indigo-100 px-2 py-1 text-[11px] font-semibold text-indigo-700"
+                          >
+                            {pn.position}:{pn.headcount}
+                          </span>
+                        ))}
+                      </div>
                       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
                         <span>ID: {it.id}</span>
                         <span>모집 마감: {formatDate(it.deadline)}</span>
@@ -459,7 +554,63 @@ export default function ProjectManagePage() {
                 <textarea
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
-                  rows={4}
+                  rows={6}
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="grid gap-1 text-sm">
+                  <span className="font-semibold">진행 방식</span>
+                  <select
+                    value={formMode}
+                    onChange={(e) => setFormMode(e.target.value)}
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="ONLINE">ONLINE</option>
+                    <option value="OFFLINE">OFFLINE</option>
+                  </select>
+                </label>
+                <label className="grid gap-1 text-sm">
+                  <span className="font-semibold">난이도</span>
+                  <select
+                    value={formDifficulty}
+                    onChange={(e) => setFormDifficulty(e.target.value)}
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="EASY">EASY</option>
+                    <option value="MEDIUM">MEDIUM</option>
+                    <option value="HARD">HARD</option>
+                  </select>
+                </label>
+                <label className="grid gap-1 text-sm">
+                  <span className="font-semibold">상태</span>
+                  <select
+                    value={formStatus}
+                    onChange={(e) => setFormStatus(e.target.value)}
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="PLANNING">PLANNING</option>
+                    <option value="IN_PROGRESS">IN_PROGRESS</option>
+                    <option value="COMPLETED">COMPLETED</option>
+                    <option value="CANCELED">CANCELED</option>
+                  </select>
+                </label>
+              </div>
+              <label className="grid gap-1 text-sm">
+                <span className="font-semibold">기술 스택 (쉼표 구분)</span>
+                <input
+                  value={formTechStacks}
+                  onChange={(e) => setFormTechStacks(e.target.value)}
+                  placeholder="예: React, Next.js, TypeScript, Prisma"
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="font-semibold">모집 포지션 (POSITION:인원, 쉼표 구분)</span>
+                <input
+                  value={formPositionNeeds}
+                  onChange={(e) => setFormPositionNeeds(e.target.value)}
+                  placeholder="예: DEV:2, DESIGN:1, PLANNER:1"
                   className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
                 />
               </label>
