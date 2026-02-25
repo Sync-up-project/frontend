@@ -261,16 +261,6 @@ export default function LoginPage() {
                   ? tr("GitHub 로그인 확인 중...", "GitHubログイン確認中...")
                   : tr("GitHub로 로그인", "GitHubでログイン")}
               </button>
-
-              <div className="pt-1">
-                <p className="text-xs text-gray-500">
-                  {tr(
-                    "GitHub OAuth는 백엔드 구현 완료 후 정상 동작합니다. (지금은 버튼/흐름만 준비)",
-                    "GitHub OAuthはバックエンド実装完了後に正常動作します。（現在はボタン/フローのみ準備）"
-                  )}
-                </p>
-              </div>
-
               <div className="flex items-center justify-between pt-2">
                 <Link href="/signup" className="text-sm text-gray-700 hover:underline">
                   {tr("회원가입", "会員登録")}
@@ -279,15 +269,6 @@ export default function LoginPage() {
                 <Link href="/" className="text-sm text-gray-500 hover:underline">
                   {tr("홈으로", "ホームへ")}
                 </Link>
-              </div>
-
-              <div className="pt-2">
-                <p className="text-xs text-gray-500">
-                  {tr(
-                    "문제 발생 시: 백엔드가 /auth/github, /auth/github/callback, /auth/me 를 제공하는지 확인해 주세요.",
-                    "問題が発生した場合: バックエンドが /auth/github, /auth/github/callback, /auth/me を提供しているかご確認ください。"
-                  )}
-                </p>
               </div>
             </form>
           </div>

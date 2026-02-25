@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useI18n } from "@/lib/i18n";
-import { fetchCurrentUser, getCurrentUser, saveCurrentUser } from "@/lib/auth";
+import { fetchCurrentUser, getAccessToken, getCurrentUser, saveCurrentUser } from "@/lib/auth";
 import { apiPostNotice } from "@/lib/noticeApi";
 
 async function resolveAuthorId(): Promise<string | null> {
@@ -28,6 +28,14 @@ export default function NoticeWriteClient() {
   const router = useRouter();
   const { tr, lang } = useI18n();
 
+  // ✅ 비로그인 직접 접근 차단: 알림 → 로그인 이동
+  useEffect(() => {
+    if (!getAccessToken()) {
+      alert(tr("로그인이 필요한 기능입니다.", "ログインが必要な機能です。"));
+      router.replace("/login");
+    }
+  }, [router, tr]);
+
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [pinned, setPinned] = useState(false);
@@ -41,9 +49,17 @@ export default function NoticeWriteClient() {
   async function onSubmit() {
     if (!canSubmit) return;
 
+    // ✅ 클릭 시점에도 방어
+    if (!getAccessToken()) {
+      alert(tr("로그인이 필요한 기능입니다.", "ログインが必要な機能です。"));
+      router.replace("/login");
+      return;
+    }
+
     const authorId = await resolveAuthorId();
     if (!authorId) {
-      alert(tr("로그인이 필요합니다.", "ログインが必要です。"));
+      alert(tr("로그인이 필요한 기능입니다.", "ログインが必要な機能です。"));
+      router.replace("/login");
       return;
     }
 
@@ -58,7 +74,8 @@ export default function NoticeWriteClient() {
         originalLang,
       });
 
-      const raw = (res as any)?.data && typeof (res as any).data === "object" ? (res as any).data : res;
+      const raw =
+        (res as any)?.data && typeof (res as any).data === "object" ? (res as any).data : res;
       const id = raw?.id ?? raw?.noticeId;
 
       if (id) router.push(`/notices/${id}`);
@@ -76,7 +93,9 @@ export default function NoticeWriteClient() {
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-extrabold text-gray-900">{tr("공지 작성", "お知らせ作成")}</h1>
-            <p className="mt-1 text-sm text-gray-500">{tr("제목과 내용을 입력한 뒤 등록하세요.", "タイトルと内容を入力して作成します。")}</p>
+            <p className="mt-1 text-sm text-gray-500">
+              {tr("제목과 내용을 입력한 뒤 등록하세요.", "タイトルと内容を入力して作成します。")}
+            </p>
           </div>
 
           <Link href="/notices" className="text-sm font-semibold text-gray-700 hover:text-gray-900">
@@ -89,7 +108,9 @@ export default function NoticeWriteClient() {
             <div className="flex items-center justify-between rounded-2xl border border-gray-100 bg-white p-4">
               <div>
                 <p className="text-sm font-semibold text-gray-900">{tr("상단 고정", "固定")}</p>
-                <p className="mt-1 text-xs text-gray-500">{tr("고정된 공지는 목록 상단에 표시됩니다.", "固定されたお知らせは上部に表示されます。")}</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  {tr("고정된 공지는 목록 상단에 표시됩니다.", "固定されたお知らせは上部に表示されます。")}
+                </p>
               </div>
 
               <label className="inline-flex items-center gap-2 text-sm font-semibold text-gray-700">
