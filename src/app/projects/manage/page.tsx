@@ -24,6 +24,17 @@ type ManagedProject = {
   capacity: number;
 };
 
+type RecommendedUser = {
+  id: string;
+  nickname: string;
+  role: string | null;
+  techStacks: string[];
+  githubCommits: number;
+  githubRepoCount: number;
+  matchingPoint: number;
+  reasons: string[];
+};
+
 function formatDate(value?: string | null) {
   if (!value) return "-";
   const d = new Date(value);
@@ -106,6 +117,16 @@ export default function ProjectManagePage() {
   const [formStatus, setFormStatus] = useState("PLANNING");
   const [formTechStacks, setFormTechStacks] = useState("");
   const [formPositionNeeds, setFormPositionNeeds] = useState("");
+  const [recommendByProject, setRecommendByProject] = useState<
+    Record<
+      string,
+      {
+        loading: boolean;
+        error: string | null;
+        items: RecommendedUser[];
+      }
+    >
+  >({});
 
   useEffect(() => {
     let mounted = true;
@@ -359,6 +380,58 @@ export default function ProjectManagePage() {
     }
   }
 
+  async function loadRecommendations(projectId: string) {
+    setRecommendByProject((prev) => ({
+      ...prev,
+      [projectId]: {
+        loading: true,
+        error: null,
+        items: prev[projectId]?.items ?? [],
+      },
+    }));
+
+    try {
+      const token = getAccessToken();
+      const res = await fetch(`/api/projects/${projectId}/recommend-users?limit=5`, {
+        method: "GET",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      const text = await res.text();
+      if (!res.ok) {
+        setRecommendByProject((prev) => ({
+          ...prev,
+          [projectId]: {
+            loading: false,
+            error: `${res.status} ${res.statusText}`,
+            items: prev[projectId]?.items ?? [],
+          },
+        }));
+        return;
+      }
+
+      const json = text ? JSON.parse(text) : {};
+      const items = Array.isArray(json?.items) ? json.items : [];
+      setRecommendByProject((prev) => ({
+        ...prev,
+        [projectId]: {
+          loading: false,
+          error: null,
+          items,
+        },
+      }));
+    } catch (e) {
+      setRecommendByProject((prev) => ({
+        ...prev,
+        [projectId]: {
+          loading: false,
+          error: String(e),
+          items: prev[projectId]?.items ?? [],
+        },
+      }));
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="mx-auto max-w-screen-2xl px-8 py-10">
@@ -424,6 +497,13 @@ export default function ProjectManagePage() {
             <ul className="divide-y divide-gray-100">
               {filtered.map((it) => (
                 <li key={it.id} className="p-5">
+                  {(() => {
+                    const recState = recommendByProject[it.id] ?? {
+                      loading: false,
+                      error: null,
+                      items: [] as RecommendedUser[],
+                    };
+                    return (
                   <div className="flex flex-wrap items-start gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -468,9 +548,56 @@ export default function ProjectManagePage() {
                           인원: {it.membersCount}/{it.capacity || "-"}
                         </span>
                       </div>
+
+                      {(recState.items.length > 0 || recState.error) && (
+                        <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                          <p className="text-xs font-semibold text-gray-600">추천 유저</p>
+                          {recState.error ? (
+                            <p className="mt-2 text-xs text-rose-700">{recState.error}</p>
+                          ) : (
+                            <ul className="mt-2 space-y-2">
+                              {recState.items.map((u) => (
+                                <li
+                                  key={u.id}
+                                  className="rounded-lg border border-gray-200 bg-white px-3 py-2"
+                                >
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-sm font-semibold text-gray-900">
+                                      {u.nickname}
+                                    </span>
+                                    {u.role && (
+                                      <span className="rounded-md bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                                        {u.role}
+                                      </span>
+                                    )}
+                                    <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                      매칭 {u.matchingPoint}점
+                                    </span>
+                                  </div>
+                                  <p className="mt-1 text-[11px] text-gray-600">
+                                    {u.reasons?.join(" · ") || "추천 사유 없음"}
+                                  </p>
+                                  <p className="mt-1 text-[11px] text-gray-500">
+                                    스택: {(u.techStacks ?? []).join(", ") || "-"} / 커밋:{" "}
+                                    {u.githubCommits ?? 0} / 리포: {u.githubRepoCount ?? 0}
+                                  </p>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => loadRecommendations(it.id)}
+                        disabled={recState.loading}
+                        className="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+                      >
+                        {recState.loading ? "추천 계산 중..." : "유저 추천"}
+                      </button>
                       <button
                         type="button"
                         onClick={() => onEarlyClose(it.id)}
@@ -502,6 +629,8 @@ export default function ProjectManagePage() {
                       </button>
                     </div>
                   </div>
+                    );
+                  })()}
                 </li>
               ))}
             </ul>
