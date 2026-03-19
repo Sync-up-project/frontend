@@ -45,6 +45,7 @@ export type SignupResponse = {
 
 const TOKEN_KEY = "syncup_access_token";
 const SESSION_USER_KEY = "syncup_session_user";
+const ACTIVE_PROJECT_KEY = "syncup_active_project_id";
 
 const DEV_AUTH_ENABLED = process.env.NEXT_PUBLIC_ENABLE_DEV_AUTH === "true";
 
@@ -65,7 +66,6 @@ export function saveAccessToken(token: string): void {
   notifyAuthChanged();
 }
 
-// 호환성: 기존 코드에서 setAccessToken을 import하는 경우 대응
 export function setAccessToken(token: string): void {
   saveAccessToken(token);
 }
@@ -79,7 +79,17 @@ export function clearAccessToken(): void {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(TOKEN_KEY);
   window.localStorage.removeItem(SESSION_USER_KEY);
+  window.localStorage.removeItem(ACTIVE_PROJECT_KEY);
   notifyAuthChanged();
+}
+
+function saveActiveProjectId(projectId: string | null): void {
+  if (typeof window === "undefined") return;
+  if (!projectId) {
+    window.localStorage.removeItem(ACTIVE_PROJECT_KEY);
+  } else {
+    window.localStorage.setItem(ACTIVE_PROJECT_KEY, String(projectId));
+  }
 }
 
 export function saveCurrentUser(user: SessionUser): void {
@@ -88,10 +98,6 @@ export function saveCurrentUser(user: SessionUser): void {
   notifyAuthChanged();
 }
 
-/**
- * ✅ 기존 동작 유지: 로컬 캐시(SessionUser)만 읽음
- * - "진짜 DB 유저"가 필요하면 fetchCurrentUser() 사용
- */
 export function getCurrentUser(): SessionUser | null {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(SESSION_USER_KEY);
@@ -125,10 +131,6 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promi
   return data as T;
 }
 
-/**
- * ✅ 핵심 추가: 백엔드에서 현재 로그인 유저(/auth/me)를 Bearer로 가져오기
- * - 성공하면 로컬 캐시(SESSION_USER_KEY) 갱신
- */
 export async function fetchCurrentUser(): Promise<SessionUser> {
   const token = getAccessToken();
   if (!token) throw new Error("인증 토큰이 없습니다.");
@@ -183,10 +185,38 @@ export async function fetchCurrentUser(): Promise<SessionUser> {
   return normalized;
 }
 
-/**
- * 닉네임 중복 확인
- * - 백엔드 미구현이면 UX를 막지 않기 위해 true(사용 가능)로 처리
- */
+async function syncActiveProjectForCurrentUser(): Promise<void> {
+  if (typeof window === "undefined") return;
+  const token = getAccessToken();
+  if (!token) return;
+
+  const url = `${getApiBaseUrl()}/projects/my/active`;
+
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+      credentials: "include",
+    });
+
+    if (!res.ok) {
+      return;
+    }
+
+    const data = await res.json().catch(() => null as any);
+    const pid = data?.projectId ?? data?.project?.id ?? null;
+    if (pid) {
+      saveActiveProjectId(String(pid));
+    } else {
+      saveActiveProjectId(null);
+    }
+  } catch {
+  }
+}
+
 export async function checkNicknameAvailable(nickname: string): Promise<boolean> {
   const trimmed = nickname.trim();
   if (!trimmed) return false;
@@ -230,9 +260,9 @@ export async function login(payload: LoginRequest): Promise<LoginResponse> {
   if (res?.accessToken) saveAccessToken(res.accessToken);
   if (res?.user) saveCurrentUser(res.user);
 
-  // ✅ 가능하면 /auth/me로 최신 유저정보 동기화 (실패해도 로그인은 유지)
   try {
     await fetchCurrentUser();
+    await syncActiveProjectForCurrentUser();
   } catch {
     // ignore
   }
@@ -255,6 +285,7 @@ export async function signup(payload: SignupRequest): Promise<SignupResponse> {
   // ✅ 가능하면 /auth/me로 최신 유저정보 동기화
   try {
     await fetchCurrentUser();
+    await syncActiveProjectForCurrentUser();
   } catch {
     // ignore
   }

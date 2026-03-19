@@ -33,6 +33,18 @@ function formatTime(ts: string | Date) {
   return d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
 }
 
+function getStoredActiveProjectId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return (
+      window.localStorage.getItem("syncup_active_project_id") ??
+      window.localStorage.getItem("syncup_last_project_id")
+    );
+  } catch {
+    return null;
+  }
+}
+
 function parseProjectIdFromPath(pathname: string): string | null {
   const m = pathname.match(/^\/projects\/([^\/\?]+)(\/|$)/);
   if (!m) return null;
@@ -153,6 +165,7 @@ export default function ChatWidget() {
   const [myNickname, setMyNickname] = useState<string>("나");
 
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [fallbackProjectId, setFallbackProjectId] = useState<string | null>(null);
   const [joinStatus, setJoinStatus] = useState<"idle" | "joining" | "joined" | "error">("idle");
   const [joinError, setJoinError] = useState<string | null>(null);
 
@@ -169,6 +182,15 @@ export default function ChatWidget() {
 
   useOnClickOutside([panelRef, buttonRef], () => setOpen(false), open);
   useEscapeClose(() => setOpen(false), open);
+
+  useEffect(() => {
+    if (!isAuthed) {
+      setFallbackProjectId(null);
+      return;
+    }
+    const stored = getStoredActiveProjectId();
+    setFallbackProjectId(stored);
+  }, [isAuthed]);
 
   useEffect(() => {
     const pid = parseProjectIdFromPath(pathname);
@@ -221,9 +243,13 @@ export default function ChatWidget() {
     setUnreadTotal(0);
   }, [open]);
 
+  const effectiveProjectId = useMemo(() => {
+    return projectId ?? fallbackProjectId;
+  }, [projectId, fallbackProjectId]);
+
   const canUseProjectChat = useMemo(() => {
-    return Boolean(myId && projectId);
-  }, [myId, projectId]);
+    return Boolean(myId && effectiveProjectId);
+  }, [myId, effectiveProjectId]);
 
   const typingText = useMemo(() => {
     const names = Object.entries(typingUsers)
@@ -290,9 +316,11 @@ export default function ChatWidget() {
   }
 
   async function joinProjectRoom() {
-    if (!myId || !projectId) {
+    const targetProjectId = effectiveProjectId;
+
+    if (!myId || !targetProjectId) {
       setJoinStatus("error");
-      setJoinError("프로젝트 상세(/projects/[id])에서만 채팅 참여가 가능합니다.");
+      setJoinError("참여 중인 프로젝트가 없어서 채팅에 연결할 수 없습니다.");
       return;
     }
 
@@ -301,11 +329,14 @@ export default function ChatWidget() {
 
     const s = connectSocketIfNeeded();
 
-    s.emit("join", { userId: myId, projectId }, (ack: any) => {
+    s.emit("join", { userId: myId, projectId: targetProjectId }, (ack: any) => {
       if (ack?.status === "joined") {
         setJoinStatus("joined");
         setJoinError(null);
         if (ack?.username) setMyNickname(String(ack.username));
+        try {
+          localStorage.setItem("syncup_active_project_id", targetProjectId);
+        } catch {}
       } else {
         setJoinStatus("error");
         setJoinError(String(ack?.message ?? "채팅방 입장에 실패했습니다."));
@@ -362,7 +393,7 @@ export default function ChatWidget() {
       joinProjectRoom();
     } else {
       setJoinStatus("error");
-      setJoinError("프로젝트 상세 화면(/projects/[id])에서 채팅이 활성화됩니다.");
+      setJoinError("참여 가능한 프로젝트 채팅방이 없습니다.");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tab, canUseProjectChat]);
@@ -465,7 +496,7 @@ export default function ChatWidget() {
                 {tab === "project" ? (
                   <>
                     <span className="font-bold text-gray-800">프로젝트:</span>{" "}
-                    <span className="font-mono">{projectId ?? "-"}</span>
+                    <span className="font-mono">{effectiveProjectId ?? "-"}</span>
                     <span className="ml-2 text-gray-400">·</span>
                     <span className="ml-2">접속 {userCount}명</span>
                   </>
