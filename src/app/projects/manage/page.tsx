@@ -155,7 +155,9 @@ export default function ProjectManagePage() {
 
         const mapped: ManagedProject[] = raw.map((p) => ({
           id: String(p?.id ?? ""),
-          ownerId: String(p?.ownerId ?? p?.owner?.id ?? ""),
+          ownerId: String(
+            p?.ownerId ?? p?.ownerid ?? p?.owner?.id ?? ""
+          ),
           title: String(p?.titleOriginal ?? p?.title ?? "제목 없음"),
           summary: String(p?.summaryOriginal ?? p?.summary ?? "-"),
           description: String(p?.descriptionOriginal ?? p?.description ?? ""),
@@ -418,6 +420,10 @@ export default function ProjectManagePage() {
           loading: false,
           error: null,
           items,
+          emptyHint:
+            items.length === 0
+              ? "조건에 맞는 추천 유저가 없어요. (다른 유저 시드/역할·스택을 확인해 보세요.)"
+              : null,
         },
       }));
     } catch (e) {
