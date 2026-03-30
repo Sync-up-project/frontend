@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { io, Socket } from "socket.io-client";
 import { getAccessToken } from "@/lib/auth";
@@ -10,6 +10,7 @@ type ChatTab = "project" | "dm";
 
 type ServerChatMessage = {
   id: string;
+  senderId?: string;
   username: string;
   message: string;
   timestamp: string | Date;
@@ -21,7 +22,55 @@ type UiMessage = {
   senderName: string;
   text: string;
   timeText: string;
+  /** 과거 메시지 페이지네이션용 */
+  createdAtIso?: string;
 };
+
+const CHAT_CACHE_MAX = 50;
+
+function chatCacheKey(projectId: string) {
+  return `syncup_chat_cache_v2:${projectId}`;
+}
+
+function readChatCache(projectId: string): UiMessage[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(chatCacheKey(projectId));
+    if (!raw) return null;
+    const j = JSON.parse(raw) as { messages?: unknown };
+    if (!Array.isArray(j.messages)) return null;
+    return j.messages as UiMessage[];
+  } catch {
+    return null;
+  }
+}
+
+function writeChatCache(projectId: string, messages: UiMessage[]) {
+  if (typeof window === "undefined") return;
+  try {
+    const tail = messages.slice(-CHAT_CACHE_MAX);
+    sessionStorage.setItem(chatCacheKey(projectId), JSON.stringify({ messages: tail }));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+function parseMessageHistoryPayload(raw: unknown): {
+  messages: ServerChatMessage[];
+  hasMore: boolean;
+} {
+  if (Array.isArray(raw)) {
+    return { messages: raw as ServerChatMessage[], hasMore: false };
+  }
+  if (raw && typeof raw === "object" && "messages" in raw) {
+    const o = raw as { messages?: ServerChatMessage[]; hasMore?: boolean };
+    return {
+      messages: Array.isArray(o.messages) ? o.messages : [],
+      hasMore: Boolean(o.hasMore),
+    };
+  }
+  return { messages: [], hasMore: false };
+}
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -31,6 +80,22 @@ function formatTime(ts: string | Date) {
   const d = typeof ts === "string" ? new Date(ts) : ts;
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function serverMessageToUi(m: ServerChatMessage, myId: string | null): UiMessage {
+  const ts = m.timestamp;
+  const d = typeof ts === "string" ? new Date(ts) : ts;
+  const createdAtIso = Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+  const sid = m.senderId ?? "";
+  const side = myId && sid && sid === myId ? "me" : "other";
+  return {
+    id: String(m.id),
+    side,
+    senderName: m.username,
+    text: m.message,
+    timeText: formatTime(ts),
+    createdAtIso,
+  };
 }
 
 function getStoredActiveProjectId(): string | null {
@@ -173,12 +238,39 @@ export default function ChatWidget() {
   const [typingUsers, setTypingUsers] = useState<Record<string, boolean>>({});
 
   const [messages, setMessages] = useState<UiMessage[]>([]);
+  const [hasMoreOlder, setHasMoreOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [draft, setDraft] = useState("");
 
   const socketRef = useRef<Socket | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   const typingTimerRef = useRef<any>(null);
+  const myIdRef = useRef<string | null>(null);
+  const loadingOlderRef = useRef(false);
+  const scrollRestoreRef = useRef<{ prevHeight: number; prevTop: number } | null>(null);
+  const loadOlderDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const effectiveProjectIdRef = useRef<string | null>(null);
+  const messagesRef = useRef<UiMessage[]>([]);
+  const hasMoreOlderRef = useRef(false);
+  const myNicknameRef = useRef(myNickname);
+
+  useEffect(() => {
+    myIdRef.current = myId;
+  }, [myId]);
+
+  useEffect(() => {
+    myNicknameRef.current = myNickname;
+  }, [myNickname]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    hasMoreOlderRef.current = hasMoreOlder;
+  }, [hasMoreOlder]);
 
   useOnClickOutside([panelRef, buttonRef], () => setOpen(false), open);
   useEscapeClose(() => setOpen(false), open);
@@ -229,6 +321,8 @@ export default function ChatWidget() {
     setUserCount(0);
     setTypingUsers({});
     setMessages([]);
+    setHasMoreOlder(false);
+    setLoadingOlder(false);
 
     if (socketRef.current) {
       try {
@@ -246,6 +340,10 @@ export default function ChatWidget() {
   const effectiveProjectId = useMemo(() => {
     return projectId ?? fallbackProjectId;
   }, [projectId, fallbackProjectId]);
+
+  useEffect(() => {
+    effectiveProjectIdRef.current = effectiveProjectId ?? null;
+  }, [effectiveProjectId]);
 
   const canUseProjectChat = useMemo(() => {
     return Boolean(myId && effectiveProjectId);
@@ -274,31 +372,34 @@ export default function ChatWidget() {
       setJoinStatus("idle");
       setUserCount(0);
       setTypingUsers({});
+      setHasMoreOlder(false);
+      setLoadingOlder(false);
+      loadingOlderRef.current = false;
     });
 
-    s.on("messageHistory", (history: ServerChatMessage[]) => {
-      setMessages(
-        (history ?? []).map((m) => ({
-          id: String(m.id),
-          side: m.username === myNickname ? "me" : "other",
-          senderName: m.username,
-          text: m.message,
-          timeText: formatTime(m.timestamp),
-        }))
-      );
+    s.on("messageHistory", (raw: unknown) => {
+      const { messages: rawMsgs, hasMore } = parseMessageHistoryPayload(raw);
+      const uid = myIdRef.current;
+      const mapped = rawMsgs.map((m) => serverMessageToUi(m, uid));
+      setMessages(mapped);
+      setHasMoreOlder(hasMore);
+      const pid = effectiveProjectIdRef.current;
+      if (pid) writeChatCache(pid, mapped);
+      queueMicrotask(() => {
+        const el = messagesScrollRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
     });
 
     s.on("message", (m: ServerChatMessage) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: String(m.id),
-          side: m.username === myNickname ? "me" : "other",
-          senderName: m.username,
-          text: m.message,
-          timeText: formatTime(m.timestamp),
-        },
-      ]);
+      setMessages((prev) => {
+        if (prev.some((p) => p.id === String(m.id))) return prev;
+        const row = serverMessageToUi(m, myIdRef.current);
+        const next = [...prev, row];
+        const pid = effectiveProjectIdRef.current;
+        if (pid) writeChatCache(pid, next);
+        return next;
+      });
     });
 
     s.on("userCount", (count: number) => {
@@ -308,12 +409,76 @@ export default function ChatWidget() {
     s.on("typing", (payload: { username: string; isTyping: boolean }) => {
       const u = payload?.username ?? "";
       if (!u) return;
-      if (u === myNickname) return;
+      if (u === myNicknameRef.current) return;
       setTypingUsers((prev) => ({ ...prev, [u]: Boolean(payload.isTyping) }));
     });
 
     return s;
   }
+
+  function loadOlderMessages() {
+    const s = socketRef.current;
+    const pid = effectiveProjectIdRef.current;
+    if (!s || !pid) return;
+    if (!hasMoreOlderRef.current || loadingOlderRef.current) return;
+    const first = messagesRef.current[0];
+    if (!first?.createdAtIso) return;
+
+    const el = messagesScrollRef.current;
+    if (el) {
+      scrollRestoreRef.current = { prevHeight: el.scrollHeight, prevTop: el.scrollTop };
+    }
+
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+
+    s.emit("loadOlderMessages", { beforeCreatedAt: first.createdAtIso }, (ack: any) => {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+
+      if (ack?.status !== "ok" || !Array.isArray(ack.messages)) {
+        scrollRestoreRef.current = null;
+        return;
+      }
+
+      const uid = myIdRef.current;
+      const older = (ack.messages as ServerChatMessage[]).map((msg) =>
+        serverMessageToUi(msg, uid)
+      );
+
+      setMessages((prev) => {
+        const existing = new Set(prev.map((p) => p.id));
+        const merged = older.filter((o) => !existing.has(o.id));
+        const next = [...merged, ...prev];
+        if (pid) writeChatCache(pid, next);
+        return next;
+      });
+
+      setHasMoreOlder(Boolean(ack.hasMore));
+    });
+  }
+
+  function onMessagesScroll(e: React.UIEvent<HTMLDivElement>) {
+    const el = e.currentTarget;
+    if (el.scrollTop > 80) return;
+    if (!hasMoreOlderRef.current || loadingOlderRef.current) return;
+    const first = messagesRef.current[0];
+    if (!first?.createdAtIso) return;
+
+    if (loadOlderDebounceRef.current) clearTimeout(loadOlderDebounceRef.current);
+    loadOlderDebounceRef.current = setTimeout(() => {
+      loadOlderDebounceRef.current = null;
+      loadOlderMessages();
+    }, 120);
+  }
+
+  useLayoutEffect(() => {
+    const p = scrollRestoreRef.current;
+    const el = messagesScrollRef.current;
+    if (!p || !el) return;
+    scrollRestoreRef.current = null;
+    el.scrollTop = el.scrollHeight - p.prevHeight + p.prevTop;
+  }, [messages]);
 
   async function joinProjectRoom() {
     const targetProjectId = effectiveProjectId;
@@ -326,6 +491,17 @@ export default function ChatWidget() {
 
     setJoinStatus("joining");
     setJoinError(null);
+    setLoadingOlder(false);
+    loadingOlderRef.current = false;
+
+    const cached = readChatCache(targetProjectId);
+    if (cached?.length) {
+      setMessages(cached);
+      setHasMoreOlder(true);
+    } else {
+      setMessages([]);
+      setHasMoreOlder(false);
+    }
 
     const s = connectSocketIfNeeded();
 
@@ -351,6 +527,14 @@ export default function ChatWidget() {
     setUserCount(0);
     setTypingUsers({});
     setMessages([]);
+    setHasMoreOlder(false);
+    setLoadingOlder(false);
+    loadingOlderRef.current = false;
+    scrollRestoreRef.current = null;
+    if (loadOlderDebounceRef.current) {
+      clearTimeout(loadOlderDebounceRef.current);
+      loadOlderDebounceRef.current = null;
+    }
 
     const s = socketRef.current;
     if (s) {
@@ -528,7 +712,14 @@ export default function ChatWidget() {
               {typingText ? <div className="mt-1 text-xs text-gray-500">{typingText}</div> : null}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+            <div
+              ref={messagesScrollRef}
+              onScroll={onMessagesScroll}
+              className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0"
+            >
+              {loadingOlder ? (
+                <div className="text-center text-xs text-gray-400 py-2">이전 메시지 불러오는 중…</div>
+              ) : null}
               {tab === "dm" ? (
                 <div className="text-sm text-gray-500 text-center py-16">
                   개인 채팅은 백엔드 이벤트/룸 설계가 추가되면 활성화됩니다.
