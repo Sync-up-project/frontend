@@ -5,15 +5,12 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { getCurrentUser } from "@/lib/auth";
 
-const PRESETS = ["LIGHT", "MEDIUM", "HEAVY"] as const;
 const LANGS = ["KO", "EN"] as const;
 
 export default function GenerateDraftPage() {
   const router = useRouter();
   const [ideaText, setIdeaText] = useState("");
   const [language, setLanguage] = useState<(typeof LANGS)[number]>("KO");
-  const [mockPreset, setMockPreset] =
-    useState<(typeof PRESETS)[number]>("MEDIUM");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -72,7 +69,6 @@ export default function GenerateDraftPage() {
         body: JSON.stringify({
           ideaText,
           language,
-          mockPreset,
           createdById: me?.id ?? undefined,
         }),
       });
@@ -103,7 +99,7 @@ export default function GenerateDraftPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">드래프트 생성</h1>
             <p className="mt-1 text-sm text-gray-600">
-              아이디어 한 줄로 드래프트를 생성해요 (Mock provider)
+              아이디어 한 줄로 드래프트를 생성해요
             </p>
           </div>
           <Link
@@ -124,41 +120,22 @@ export default function GenerateDraftPage() {
           className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300"
         />
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="grid gap-2 text-sm">
-            <span className="font-semibold">언어</span>
-            <select
-              value={language}
-              onChange={(e) =>
-                setLanguage(e.target.value as (typeof LANGS)[number])
-              }
-              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              {LANGS.map((lang) => (
-                <option key={lang} value={lang}>
-                  {lang}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="grid gap-2 text-sm">
-            <span className="font-semibold">Mock 프리셋</span>
-            <select
-              value={mockPreset}
-              onChange={(e) =>
-                setMockPreset(e.target.value as (typeof PRESETS)[number])
-              }
-              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              {PRESETS.map((preset) => (
-                <option key={preset} value={preset}>
-                  {preset}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <label className="mt-4 grid max-w-xs gap-2 text-sm">
+          <span className="font-semibold">언어</span>
+          <select
+            value={language}
+            onChange={(e) =>
+              setLanguage(e.target.value as (typeof LANGS)[number])
+            }
+            className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+          >
+            {LANGS.map((lang) => (
+              <option key={lang} value={lang}>
+                {lang}
+              </option>
+            ))}
+          </select>
+        </label>
 
         {errorMsg && (
           <pre className="mt-4 whitespace-pre-wrap rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">

@@ -14,17 +14,11 @@ export async function GET(
 ) {
   try {
     const backend = getBackendBase();
-    const urlObj = new URL(req.url);
-    const limit = urlObj.searchParams.get("limit");
-    const url = `${backend}/projects/${params.id}/recommend-users${
-      limit ? `?limit=${encodeURIComponent(limit)}` : ""
-    }`;
-
-    const cookie = req.headers.get("cookie") ?? "";
     const authorization =
       req.headers.get("authorization") ?? req.headers.get("Authorization") ?? "";
+    const cookie = req.headers.get("cookie") ?? "";
 
-    const res = await fetch(url, {
+    const res = await fetch(`${backend}/projects/${params.id}/pending-applications`, {
       method: "GET",
       headers: {
         ...(authorization ? { Authorization: authorization } : {}),
@@ -35,18 +29,13 @@ export async function GET(
 
     const text = await res.text();
     const contentType = res.headers.get("content-type") ?? "application/json";
-
     return new NextResponse(text, {
       status: res.status,
       headers: { "content-type": contentType },
     });
   } catch (e) {
     return NextResponse.json(
-      {
-        error: "Proxy failed",
-        detail: String(e),
-        backendBase: getBackendBase(),
-      },
+      { error: "Proxy failed", detail: String(e), backendBase: getBackendBase() },
       { status: 500 }
     );
   }

@@ -1,12 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import ThemeToggle from "@/components/theme-toggle";
 import DraftViewer from "@/components/draft/DraftViewer";
 import KanbanBoardDndView from "@/components/kanban/KanbanBoardDndView";
 import { fetchCurrentUser, getAccessToken, getCurrentUser } from "@/lib/auth";
+import {
+  apiGetProjectMeParticipation,
+  apiPatchInvitation,
+  apiPostProjectApplication,
+} from "@/lib/api";
 
 type Project = {
   id: string;
@@ -184,6 +189,22 @@ export default function ProjectDetailPage({
 
   // ✅ 프로젝트 삭제 상태
   const [projectDeleting, setProjectDeleting] = useState(false);
+
+  const [participation, setParticipation] = useState<{
+    isOwner: boolean;
+    isMember: boolean;
+    pendingInvitation: {
+      id: string;
+      inviterId: string;
+      message: string | null;
+      createdAt: string;
+    } | null;
+    pendingApplication: { id: string; createdAt: string } | null;
+  } | null>(null);
+  const [participationLoading, setParticipationLoading] = useState(false);
+  const [joinModalOpen, setJoinModalOpen] = useState(false);
+  const [applyMessage, setApplyMessage] = useState("");
+  const [participationBusy, setParticipationBusy] = useState(false);
 
   // ---- Add Card Modal state ----
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -405,6 +426,31 @@ export default function ProjectDetailPage({
     }
   }, [isOwner, tab]);
 
+  const reloadParticipation = useCallback(async () => {
+    if (!currentUserId || !projectId) {
+      setParticipation(null);
+      return;
+    }
+    setParticipationLoading(true);
+    try {
+      const token = getAccessToken();
+      if (!token) {
+        setParticipation(null);
+        return;
+      }
+      const json = await apiGetProjectMeParticipation(projectId);
+      setParticipation(json ?? null);
+    } catch {
+      setParticipation(null);
+    } finally {
+      setParticipationLoading(false);
+    }
+  }, [projectId, currentUserId]);
+
+  useEffect(() => {
+    reloadParticipation();
+  }, [reloadParticipation]);
+
   const decisionsContainer = (latestArtifact as any)?.contentJson?.decisions;
   const decisions = decisionsContainer?.answers ?? null;
   const decisionsAnsweredAt = decisionsContainer?.answeredAt ?? null;
@@ -613,13 +659,109 @@ export default function ProjectDetailPage({
           </p>
           <div className="mt-2">{headerBadges}</div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Link
             href="/projects"
             className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
           >
             프로젝트 목록
           </Link>
+
+          {isOwner && (
+            <Link
+              href="/projects/manage"
+              title="추천 멤버에서 초대할 수 있어요"
+              className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-800 hover:bg-indigo-100"
+            >
+              멤버 초대
+            </Link>
+          )}
+
+          {!isOwner && currentUserId && participation && !participation.isMember && participation.pendingInvitation && (
+            <>
+              <button
+                type="button"
+                disabled={participationBusy}
+                onClick={async () => {
+                  const token = getAccessToken();
+                  if (!token || !participation.pendingInvitation) return;
+                  setParticipationBusy(true);
+                  try {
+                    await apiPatchInvitation(participation.pendingInvitation.id, {
+                      decision: "ACCEPT",
+                    });
+                    await reloadParticipation();
+                    await fetchProjectDetail();
+                  } catch (e) {
+                    alert(String(e));
+                  } finally {
+                    setParticipationBusy(false);
+                  }
+                }}
+                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                초대 수락
+              </button>
+              <button
+                type="button"
+                disabled={participationBusy}
+                onClick={async () => {
+                  const token = getAccessToken();
+                  if (!token || !participation.pendingInvitation) return;
+                  setParticipationBusy(true);
+                  try {
+                    await apiPatchInvitation(participation.pendingInvitation.id, {
+                      decision: "REJECT",
+                    });
+                    await reloadParticipation();
+                  } catch (e) {
+                    alert(String(e));
+                  } finally {
+                    setParticipationBusy(false);
+                  }
+                }}
+                className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+              >
+                초대 거절
+              </button>
+            </>
+          )}
+
+          {!isOwner &&
+            currentUserId &&
+            participation &&
+            !participation.isMember &&
+            !participation.pendingInvitation &&
+            !participation.pendingApplication && (
+              <button
+                type="button"
+                onClick={() => setJoinModalOpen(true)}
+                className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700"
+              >
+                참가 신청
+              </button>
+            )}
+
+          {!isOwner && currentUserId && participation?.pendingApplication && (
+            <span className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+              참가 신청 검토 중
+            </span>
+          )}
+
+          {!isOwner && currentUserId && participation?.isMember && (
+            <span className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+              멤버
+            </span>
+          )}
+
+          {!currentUserId && (
+            <Link
+              href="/login"
+              className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              로그인 후 참가
+            </Link>
+          )}
 
           {isOwner ? (
             <>
@@ -639,11 +781,7 @@ export default function ProjectDetailPage({
                 드래프트
               </Link>
             </>
-          ) : (
-            <span className="rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-600">
-              오너 전용 기능 숨김
-            </span>
-          )}
+          ) : null}
           <ThemeToggle />
         </div>
       </div>
@@ -979,6 +1117,71 @@ export default function ProjectDetailPage({
         onClose={closeDeleteModal}
         onSubmit={submitDelete}
       />
+
+      {joinModalOpen && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 px-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setJoinModalOpen(false);
+          }}
+        >
+          <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-lg">
+            <h3 className="text-lg font-semibold text-gray-900">참가 신청</h3>
+            <p className="mt-1 text-xs text-gray-500">
+              프로젝트 오너에게 신청 알림이 전달됩니다.
+            </p>
+            <textarea
+              className="mt-3 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              rows={4}
+              placeholder="간단한 소개 (선택)"
+              value={applyMessage}
+              onChange={(e) => setApplyMessage(e.target.value)}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setJoinModalOpen(false);
+                  setApplyMessage("");
+                }}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={participationBusy}
+                onClick={async () => {
+                  const token = getAccessToken();
+                  if (!token) return;
+                  setParticipationBusy(true);
+                  try {
+                    await apiPostProjectApplication(projectId, {
+                      message: applyMessage.trim() || undefined,
+                    });
+                    alert("참가 신청을 보냈습니다.");
+                    setJoinModalOpen(false);
+                    setApplyMessage("");
+                  } catch (e) {
+                    alert(String(e));
+                    return;
+                  } finally {
+                    setParticipationBusy(false);
+                  }
+                  try {
+                    await reloadParticipation();
+                  } catch {
+                    // 신청은 반영됨. 참가 상태만 갱신 실패 — UI는 다음 로드/새로고침에서 맞춰짐
+                  }
+                }}
+                className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+              >
+                신청하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

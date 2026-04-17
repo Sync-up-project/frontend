@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { fetchCurrentUser, getAccessToken, getCurrentUser } from "@/lib/auth";
-import { apiGetProjectsList, pickArray } from "@/lib/api";
+import {
+  apiGetProjectPendingApplications,
+  apiGetProjectRecommendUsers,
+  apiGetProjectsList,
+  apiPatchApplication,
+  apiPostProjectInvitation,
+  pickArray,
+} from "@/lib/api";
 
 type ManagedProject = {
   id: string;
@@ -33,6 +40,18 @@ type RecommendedUser = {
   githubRepoCount: number;
   matchingPoint: number;
   reasons: string[];
+};
+
+type PendingApplicationRow = {
+  id: string;
+  applicantId: string;
+  createdAt: string;
+  applicant: {
+    id: string;
+    nickname: string | null;
+    role: string | null;
+    profileImageUrl: string | null;
+  };
 };
 
 function formatDate(value?: string | null) {
@@ -127,6 +146,20 @@ export default function ProjectManagePage() {
       }
     >
   >({});
+  const [invitingKey, setInvitingKey] = useState<string | null>(null);
+  const [applicationsByProject, setApplicationsByProject] = useState<
+    Record<
+      string,
+      {
+        loading: boolean;
+        error: string | null;
+        items: PendingApplicationRow[];
+      }
+    >
+  >({});
+  const [applicationActionKey, setApplicationActionKey] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -206,6 +239,69 @@ export default function ProjectManagePage() {
       mounted = false;
     };
   }, []);
+
+  async function loadPendingApplications(projectId: string) {
+    const token = getAccessToken();
+    if (!token) return;
+
+    setApplicationsByProject((prev) => ({
+      ...prev,
+      [projectId]: {
+        loading: true,
+        error: null,
+        items: prev[projectId]?.items ?? [],
+      },
+    }));
+
+    try {
+      const json = await apiGetProjectPendingApplications(projectId);
+      const raw = Array.isArray(json?.applications) ? json.applications : [];
+      const items: PendingApplicationRow[] = raw.map((row: any) => ({
+        id: String(row?.id ?? ""),
+        applicantId: String(row?.applicantId ?? ""),
+        createdAt: String(row?.createdAt ?? ""),
+        applicant: {
+          id: String(row?.applicant?.id ?? row?.applicantId ?? ""),
+          nickname: row?.applicant?.nickname ?? null,
+          role: row?.applicant?.role ?? null,
+          profileImageUrl: row?.applicant?.profileImageUrl ?? null,
+        },
+      }));
+      setApplicationsByProject((prev) => ({
+        ...prev,
+        [projectId]: { loading: false, error: null, items },
+      }));
+    } catch (e) {
+      setApplicationsByProject((prev) => ({
+        ...prev,
+        [projectId]: {
+          loading: false,
+          error: String(e),
+          items: [],
+        },
+      }));
+    }
+  }
+
+  const ownedProjectIdsKey = useMemo(
+    () =>
+      [...items]
+        .map((p) => p.id)
+        .filter(Boolean)
+        .sort()
+        .join(","),
+    [items]
+  );
+
+  useEffect(() => {
+    if (!ownedProjectIdsKey) return;
+    const token = getAccessToken();
+    if (!token) return;
+    for (const id of ownedProjectIdsKey.split(",")) {
+      if (id) void loadPendingApplications(id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownedProjectIdsKey]);
 
   const filtered = useMemo(() => {
     const q = keyword.trim().toLowerCase();
@@ -394,25 +490,18 @@ export default function ProjectManagePage() {
 
     try {
       const token = getAccessToken();
-      const res = await fetch(`/api/projects/${projectId}/recommend-users?limit=5`, {
-        method: "GET",
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-
-      const text = await res.text();
-      if (!res.ok) {
+      if (!token) {
         setRecommendByProject((prev) => ({
           ...prev,
           [projectId]: {
             loading: false,
-            error: `${res.status} ${res.statusText}`,
+            error: "로그인이 필요합니다.",
             items: prev[projectId]?.items ?? [],
           },
         }));
         return;
       }
-
-      const json = text ? JSON.parse(text) : {};
+      const json = await apiGetProjectRecommendUsers(projectId, 15);
       const items = Array.isArray(json?.items) ? json.items : [];
       setRecommendByProject((prev) => ({
         ...prev,
@@ -420,10 +509,6 @@ export default function ProjectManagePage() {
           loading: false,
           error: null,
           items,
-          emptyHint:
-            items.length === 0
-              ? "조건에 맞는 추천 유저가 없어요. (다른 유저 시드/역할·스택을 확인해 보세요.)"
-              : null,
         },
       }));
     } catch (e) {
@@ -438,13 +523,59 @@ export default function ProjectManagePage() {
     }
   }
 
+  async function onRespondApplication(
+    projectId: string,
+    applicationId: string,
+    decision: "ACCEPT" | "REJECT"
+  ) {
+    const token = getAccessToken();
+    if (!token) {
+      alert("로그인이 필요합니다.");
+      return;
+    }
+    const key = `${applicationId}:${decision}`;
+    setApplicationActionKey(key);
+    try {
+      await apiPatchApplication(applicationId, { decision });
+      await loadPendingApplications(projectId);
+    } catch (e) {
+      alert(`처리 실패: ${String(e)}`);
+    } finally {
+      setApplicationActionKey(null);
+    }
+  }
+
+  async function onInviteMember(projectId: string, user: RecommendedUser) {
+    const token = getAccessToken();
+    if (!token) {
+      alert("로그인이 필요합니다.");
+      return;
+    }
+    const key = `${projectId}:${user.id}`;
+    setInvitingKey(key);
+    try {
+      await apiPostProjectInvitation(projectId, { inviteeId: user.id });
+      alert(`${user.nickname}님에게 초대 알림을 보냈습니다.`);
+      await loadRecommendations(projectId);
+    } catch (e) {
+      alert(`초대 실패: ${String(e)}`);
+    } finally {
+      setInvitingKey(null);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="mx-auto max-w-screen-2xl px-8 py-10">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">프로젝트 관리</h1>
-            <p className="mt-1 text-sm text-gray-600">내가 생성한 프로젝트를 한 곳에서 관리해요.</p>
+            <p className="mt-1 text-sm text-gray-600">
+              내가 생성한 프로젝트를 한 곳에서 관리해요.{" "}
+              <span className="text-gray-500">
+                유저 추천을 불러온 뒤, 추천 카드의 <strong>초대</strong>로 멤버를 초대할 수 있어요.
+              </span>
+            </p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -555,6 +686,99 @@ export default function ProjectManagePage() {
                         </span>
                       </div>
 
+                      {(() => {
+                        const appState = applicationsByProject[it.id] ?? {
+                          loading: false,
+                          error: null,
+                          items: [] as PendingApplicationRow[],
+                        };
+                        if (
+                          !appState.loading &&
+                          !appState.error &&
+                          appState.items.length === 0
+                        ) {
+                          return null;
+                        }
+                        return (
+                          <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50/60 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-xs font-semibold text-violet-900">
+                                참가 신청 (대기)
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => loadPendingApplications(it.id)}
+                                disabled={appState.loading}
+                                className="rounded-md border border-violet-200 bg-white px-2 py-1 text-[11px] font-semibold text-violet-800 hover:bg-violet-50 disabled:opacity-50"
+                              >
+                                {appState.loading ? "불러오는 중..." : "새로고침"}
+                              </button>
+                            </div>
+                            {appState.error ? (
+                              <p className="mt-2 text-xs text-rose-700">{appState.error}</p>
+                            ) : appState.loading && appState.items.length === 0 ? (
+                              <p className="mt-2 text-xs text-violet-800">불러오는 중...</p>
+                            ) : (
+                              <ul className="mt-2 space-y-2">
+                                {appState.items.map((app) => (
+                                  <li
+                                    key={app.id}
+                                    className="rounded-lg border border-violet-200 bg-white px-3 py-2"
+                                  >
+                                    <div className="flex flex-wrap items-start justify-between gap-2">
+                                      <div className="min-w-0 flex-1">
+                                        <span className="text-sm font-semibold text-gray-900">
+                                          {app.applicant.nickname ?? "이름 없음"}
+                                        </span>
+                                        {app.applicant.role && (
+                                          <span className="ml-2 rounded-md bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                                            {app.applicant.role}
+                                          </span>
+                                        )}
+                                        <p className="mt-1 text-[11px] text-gray-500">
+                                          신청일: {formatDate(app.createdAt)}
+                                        </p>
+                                        <p className="mt-0.5 font-mono text-[10px] text-gray-400">
+                                          {app.applicantId}
+                                        </p>
+                                      </div>
+                                      <div className="flex shrink-0 flex-wrap gap-1">
+                                        <button
+                                          type="button"
+                                          disabled={
+                                            applicationActionKey?.startsWith(`${app.id}:`) ??
+                                            false
+                                          }
+                                          onClick={() =>
+                                            onRespondApplication(it.id, app.id, "ACCEPT")
+                                          }
+                                          className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                                        >
+                                          수락
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={
+                                            applicationActionKey?.startsWith(`${app.id}:`) ??
+                                            false
+                                          }
+                                          onClick={() =>
+                                            onRespondApplication(it.id, app.id, "REJECT")
+                                          }
+                                          className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                                        >
+                                          거절
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        );
+                      })()}
+
                       {(recState.items.length > 0 || recState.error) && (
                         <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
                           <p className="text-xs font-semibold text-gray-600">추천 유저</p>
@@ -567,26 +791,39 @@ export default function ProjectManagePage() {
                                   key={u.id}
                                   className="rounded-lg border border-gray-200 bg-white px-3 py-2"
                                 >
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-sm font-semibold text-gray-900">
-                                      {u.nickname}
-                                    </span>
-                                    {u.role && (
-                                      <span className="rounded-md bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
-                                        {u.role}
-                                      </span>
-                                    )}
-                                    <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                                      매칭 {u.matchingPoint}점
-                                    </span>
+                                  <div className="flex flex-wrap items-start justify-between gap-2">
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="text-sm font-semibold text-gray-900">
+                                          {u.nickname}
+                                        </span>
+                                        {u.role && (
+                                          <span className="rounded-md bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                                            {u.role}
+                                          </span>
+                                        )}
+                                        <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                          매칭 {u.matchingPoint}점
+                                        </span>
+                                      </div>
+                                      <p className="mt-1 text-[11px] text-gray-600">
+                                        {u.reasons?.join(" · ") || "추천 사유 없음"}
+                                      </p>
+                                      <p className="mt-1 text-[11px] text-gray-500">
+                                        스택: {(u.techStacks ?? []).join(", ") || "-"} / 커밋:{" "}
+                                        {u.githubCommits ?? 0} / 리포: {u.githubRepoCount ?? 0}
+                                      </p>
+                                      <p className="mt-1 font-mono text-[10px] text-gray-400">{u.id}</p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      disabled={invitingKey === `${it.id}:${u.id}`}
+                                      onClick={() => onInviteMember(it.id, u)}
+                                      className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                                    >
+                                      {invitingKey === `${it.id}:${u.id}` ? "전송 중..." : "초대"}
+                                    </button>
                                   </div>
-                                  <p className="mt-1 text-[11px] text-gray-600">
-                                    {u.reasons?.join(" · ") || "추천 사유 없음"}
-                                  </p>
-                                  <p className="mt-1 text-[11px] text-gray-500">
-                                    스택: {(u.techStacks ?? []).join(", ") || "-"} / 커밋:{" "}
-                                    {u.githubCommits ?? 0} / 리포: {u.githubRepoCount ?? 0}
-                                  </p>
                                 </li>
                               ))}
                             </ul>

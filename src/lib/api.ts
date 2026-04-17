@@ -102,39 +102,56 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
     signal,
   });
 
+  const contentType = res.headers.get("content-type") || "";
+  const isJson = contentType.includes("application/json");
+  const rawBody = await res.text();
+
   // ✅ 미구현 API는 404를 허용해서 조용히 처리
   if (allow404 && res.status === 404) {
     return undefined as unknown as T;
   }
 
-  const contentType = res.headers.get("content-type") || "";
-  const isJson = contentType.includes("application/json");
-
   if (!res.ok) {
     let message = `API Error (${res.status})`;
-    try {
-      const payload = isJson ? await res.json() : await res.text();
-      if (typeof payload === "string" && payload.trim()) message = payload;
-
-      if (
-        payload &&
-        typeof payload === "object" &&
-        ("message" in payload || "error" in payload)
-      ) {
-        message = (payload as any).message ?? (payload as any).error ?? message;
+    const trimmed = rawBody.trim();
+    if (trimmed) {
+      if (isJson) {
+        try {
+          const payload = JSON.parse(trimmed) as Record<string, unknown>;
+          if (typeof payload === "object" && payload !== null) {
+            if ("message" in payload || "error" in payload) {
+              message =
+                String((payload as any).message ?? (payload as any).error ?? message);
+            }
+          }
+        } catch {
+          message = trimmed;
+        }
+      } else {
+        message = trimmed;
       }
-    } catch {
-      // ignore
     }
     throw new Error(message);
   }
 
-  if (res.status === 204) {
+  if (res.status === 204 || res.status === 205) {
     return undefined as unknown as T;
   }
 
-  if (isJson) return (await res.json()) as T;
-  return (await res.text()) as unknown as T;
+  const trimmedOk = rawBody.trim();
+  if (!trimmedOk) {
+    return undefined as unknown as T;
+  }
+
+  if (isJson) {
+    try {
+      return JSON.parse(trimmedOk) as T;
+    } catch {
+      throw new Error("Invalid JSON response from API");
+    }
+  }
+
+  return trimmedOk as unknown as T;
 }
 
 /**
@@ -201,6 +218,87 @@ export async function apiGetProjectManagement(): Promise<ProjectManagementRespon
 
 export async function apiGetProjectDetail(projectId: string): Promise<ProjectDetailResponse> {
   return apiFetch<ProjectDetailResponse>(`/projects/${projectId}`);
+}
+
+/** GET /projects/:id/recommend-users (Jwt) — Next 프록시 대신 직접 호출로 401 방지 */
+export type RecommendUsersResponse = { projectId?: string; items: any[] };
+
+export async function apiGetProjectRecommendUsers(
+  projectId: string,
+  limit = 15,
+): Promise<RecommendUsersResponse> {
+  const q = new URLSearchParams({ limit: String(limit) });
+  return apiFetch<RecommendUsersResponse>(
+    `/projects/${encodeURIComponent(projectId)}/recommend-users?${q}`,
+    { auth: true },
+  );
+}
+
+/** GET /projects/:id/pending-applications (Jwt) */
+export type PendingApplicationsResponse = { applications: any[] };
+
+export async function apiGetProjectPendingApplications(
+  projectId: string,
+): Promise<PendingApplicationsResponse> {
+  return apiFetch<PendingApplicationsResponse>(
+    `/projects/${encodeURIComponent(projectId)}/pending-applications`,
+    { auth: true },
+  );
+}
+
+/** POST /projects/:id/applications (Jwt) */
+export async function apiPostProjectApplication(
+  projectId: string,
+  body: { message?: string },
+): Promise<unknown> {
+  return apiFetch(`/projects/${encodeURIComponent(projectId)}/applications`, {
+    method: "POST",
+    auth: true,
+    body,
+  });
+}
+
+/** POST /projects/:id/invitations (Jwt) */
+export async function apiPostProjectInvitation(
+  projectId: string,
+  body: { inviteeId: string; message?: string },
+): Promise<unknown> {
+  return apiFetch(`/projects/${encodeURIComponent(projectId)}/invitations`, {
+    method: "POST",
+    auth: true,
+    body,
+  });
+}
+
+/** GET /projects/:id/me-participation (Jwt) */
+export async function apiGetProjectMeParticipation(projectId: string): Promise<any> {
+  return apiFetch(`/projects/${encodeURIComponent(projectId)}/me-participation`, {
+    auth: true,
+  });
+}
+
+/** PATCH /applications/:id (Jwt) — 참가 신청 수락/거절 */
+export async function apiPatchApplication(
+  applicationId: string,
+  body: { decision: "ACCEPT" | "REJECT" },
+): Promise<unknown> {
+  return apiFetch(`/applications/${encodeURIComponent(applicationId)}`, {
+    method: "PATCH",
+    auth: true,
+    body,
+  });
+}
+
+/** PATCH /invitations/:id (Jwt) — 초대 수락/거절 */
+export async function apiPatchInvitation(
+  invitationId: string,
+  body: { decision: "ACCEPT" | "REJECT" },
+): Promise<unknown> {
+  return apiFetch(`/invitations/${encodeURIComponent(invitationId)}`, {
+    method: "PATCH",
+    auth: true,
+    body,
+  });
 }
 
 export async function apiGetProjectSimilar(projectId: string): Promise<ProjectSimilarResponse> {
