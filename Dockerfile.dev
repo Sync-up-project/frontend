@@ -1,0 +1,20 @@
+# 개발 전용 프론트엔드 이미지.
+# 소스/노드 모듈은 compose 에서 마운트하므로 여기서는 엔트리포인트 스크립트만 굽습니다.
+FROM node:20-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache libc6-compat tini
+
+COPY docker/entrypoint.dev.sh /usr/local/bin/dev-entrypoint.sh
+RUN chmod +x /usr/local/bin/dev-entrypoint.sh
+
+ENV NODE_ENV=development \
+    NPM_CONFIG_FUND=false \
+    NPM_CONFIG_AUDIT=false \
+    NEXT_TELEMETRY_DISABLED=1
+
+EXPOSE 3000
+
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/dev-entrypoint.sh"]
+CMD ["npm", "run", "dev"]
