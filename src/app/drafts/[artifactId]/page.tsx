@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import DraftViewer from "@/components/draft/DraftViewer";
-import { fetchCurrentUser, getCurrentUser } from "@/lib/auth";
+import DraftViewer, { type DraftContentPatch } from "@/components/draft/DraftViewer";
+import { fetchCurrentUser, getAccessToken, getCurrentUser } from "@/lib/auth";
+import { pairRecruitAndEndPrefill } from "@/lib/sanitize-ai-prefill-dates";
 
 const LANG_OPTIONS = ["KO", "EN", "JA"] as const;
 const STACK_OPTIONS = [
@@ -53,11 +54,12 @@ export default function DraftDetailPage({
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
   const [recruitDeadline, setRecruitDeadline] = useState("");
   const [projectEndDate, setProjectEndDate] = useState("");
+  /** 확정 시 capacity — AI suggested_recruit_capacity 로 미리 채움 */
+  const [recruitCapacity, setRecruitCapacity] = useState("4");
   const artifactId = params.artifactId;
   const [decisions, setDecisions] = useState<Record<string, any>>({});
   const storageKey = `draft:decisions:${artifactId}`;
   const setupStorageKey = `draft:setup:${artifactId}`;
-
   const projectId: string | null = data?.meta?.projectId ?? null;
 
   const decisionsAnswers = (data as any)?.contentJson?.decisions?.answers as
@@ -76,6 +78,14 @@ export default function DraftDetailPage({
     : hasDecisions
     ? "DECIDED"
     : "DRAFT";
+
+  const canManualEdit =
+    status !== "CONFIRMED" &&
+    Boolean(currentUserId) &&
+    !data?.meta?.projectId &&
+    (!data?.meta?.createdById ||
+      String(data.meta.createdById) === String(currentUserId));
+
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -174,6 +184,21 @@ export default function DraftDetailPage({
   useEffect(() => {
     if (!artifactId || !data) return;
     const setupFromArtifact = (data as any)?.contentJson?.projectSetup ?? {};
+    const constraints =
+      (data as any)?.contentJson?.ideaNormalized?.constraints ?? {};
+    const aiDates = pairRecruitAndEndPrefill(
+      constraints?.recruit_deadline_iso,
+      constraints?.project_end_iso,
+      constraints?.deadline
+    );
+    const setupCap = Number((setupFromArtifact as any)?.recruitCapacity);
+    const aiCap = Number(constraints?.suggested_recruit_capacity);
+    const fromAiOrSetup =
+      Number.isFinite(setupCap) && setupCap >= 2 && setupCap <= 40
+        ? setupCap
+        : Number.isFinite(aiCap) && aiCap >= 2 && aiCap <= 40
+          ? aiCap
+          : 4;
     const langFromArtifact = String(
       setupFromArtifact?.originalLang ??
         (data as any)?.contentJson?.ideaNormalized?.project_meta
@@ -195,8 +220,22 @@ export default function DraftDetailPage({
         );
         setSelectedStacks(Array.isArray(saved?.selectedStacks) ? saved.selectedStacks : []);
         setSelectedTools(Array.isArray(saved?.selectedTools) ? saved.selectedTools : []);
-        setRecruitDeadline(saved?.recruitDeadline ?? toInputDate(setupFromArtifact?.deadline ?? null));
-        setProjectEndDate(saved?.projectEndDate ?? toInputDate(setupFromArtifact?.endDate ?? null));
+        setRecruitDeadline(
+          (saved?.recruitDeadline ??
+            toInputDate(setupFromArtifact?.deadline ?? null)) || aiDates.recruit
+        );
+        setProjectEndDate(
+          (saved?.projectEndDate ??
+            toInputDate(setupFromArtifact?.endDate ?? null)) || aiDates.end
+        );
+        const savedCap = Number(saved?.recruitCapacity);
+        setRecruitCapacity(
+          String(
+            Number.isFinite(savedCap) && savedCap >= 2 && savedCap <= 40
+              ? savedCap
+              : fromAiOrSetup
+          )
+        );
         return;
       }
     } catch {
@@ -210,8 +249,13 @@ export default function DraftDetailPage({
         ? setupFromArtifact.collaborationTools
         : []
     );
-    setRecruitDeadline(toInputDate(setupFromArtifact?.deadline ?? null));
-    setProjectEndDate(toInputDate(setupFromArtifact?.endDate ?? null));
+    setRecruitDeadline(
+      toInputDate(setupFromArtifact?.deadline ?? null) || aiDates.recruit
+    );
+    setProjectEndDate(
+      toInputDate(setupFromArtifact?.endDate ?? null) || aiDates.end
+    );
+    setRecruitCapacity(String(fromAiOrSetup));
   }, [artifactId, data, setupStorageKey]);
 
   useEffect(() => {
@@ -225,6 +269,7 @@ export default function DraftDetailPage({
           selectedTools,
           recruitDeadline,
           projectEndDate,
+          recruitCapacity,
         })
       );
     } catch {
@@ -238,6 +283,7 @@ export default function DraftDetailPage({
     selectedTools,
     recruitDeadline,
     projectEndDate,
+    recruitCapacity,
   ]);
 
   async function onConfirm() {
@@ -247,6 +293,11 @@ export default function DraftDetailPage({
     }
     if (!recruitDeadline || !projectEndDate) {
       alert("모집 마감일과 프로젝트 마감일을 모두 입력해 주세요.");
+      return;
+    }
+    const capNum = Math.floor(Number(recruitCapacity));
+    if (!Number.isFinite(capNum) || capNum < 2 || capNum > 40) {
+      alert("모집 인원은 2명 이상 40명 이하로 입력해 주세요.");
       return;
     }
     const descriptionChunks = [
@@ -276,6 +327,7 @@ export default function DraftDetailPage({
         endDate: projectEndDate
           ? new Date(projectEndDate).toISOString()
           : undefined,
+        capacity: capNum,
       }),
     });
 
@@ -311,6 +363,60 @@ export default function DraftDetailPage({
 
     router.push(`/projects/${projectId}`);
   }
+
+  const saveContentPatch = useCallback(
+    async (patch: DraftContentPatch): Promise<string | null> => {
+      const token = getAccessToken();
+      if (!token) return "로그인이 필요해요.";
+      const base = { ...(data?.contentJson ?? {}) } as Record<string, unknown>;
+      for (const [k, v] of Object.entries(patch)) {
+        if (v !== undefined) base[k] = v;
+      }
+      base.decisions = {
+        ...(typeof base.decisions === "object" && base.decisions
+          ? base.decisions
+          : {}),
+        schema_version:
+          (base.decisions as { schema_version?: string })?.schema_version ??
+          "1",
+        answers: {
+          ...((base.decisions as { answers?: Record<string, unknown> })?.answers ??
+            {}),
+          ...decisions,
+        },
+      };
+      try {
+        const res = await fetch(`/api/ai/artifacts/${artifactId}/content`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ contentJson: base }),
+        });
+        const text = await res.text();
+        let json: any = null;
+        try {
+          json = text ? JSON.parse(text) : null;
+        } catch {
+          json = null;
+        }
+        if (!res.ok) {
+          return String(
+            json?.message ??
+              json?.error ??
+              (typeof json === "string" ? json : text) ??
+              `저장 실패 (${res.status})`
+          );
+        }
+        setData(json);
+        return null;
+      } catch (e) {
+        return String(e);
+      }
+    },
+    [artifactId, data?.contentJson, decisions]
+  );
 
   async function onRevise() {
     if (!revisionText.trim() || revisionSubmitting) return;
@@ -445,6 +551,22 @@ export default function DraftDetailPage({
               type="date"
               value={recruitDeadline}
               onChange={(e) => setRecruitDeadline(e.target.value)}
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="grid gap-2 text-sm">
+            <span className="font-semibold">모집 인원 (정원)</span>
+            <span className="text-xs font-normal text-gray-500">
+              AI가 범위·기능 수를 보고 제안한 값이에요. 필요하면 수정하세요.
+            </span>
+            <input
+              type="number"
+              min={2}
+              max={40}
+              step={1}
+              value={recruitCapacity}
+              onChange={(e) => setRecruitCapacity(e.target.value)}
               className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
             />
           </label>
@@ -604,12 +726,19 @@ export default function DraftDetailPage({
       <div className="mx-auto mt-6 max-w-screen-2xl rounded-2xl border border-gray-200 bg-white p-5 text-sm text-gray-900 shadow-sm">
         {loading && <p>불러오는 중...</p>}
         {!loading && !data && <p>드래프트를 찾을 수 없어요.</p>}
+        {canManualEdit && !loading && data && (
+          <p className="mb-3 text-xs text-gray-500">
+            각 탭 상단의 '이 내용 수정'으로 모달을 열어 해당 부분만 고칠 수 있어요. 저장 시 서버에서
+            검증합니다.
+          </p>
+        )}
         {!loading && data && (
           <DraftViewer
             contentJson={data.contentJson}
             decisions={decisions}
             onDecisionsChange={setDecisions}
             readOnly={status === "CONFIRMED"}
+            onSaveContentPatch={canManualEdit ? saveContentPatch : undefined}
           />
         )}
       </div>

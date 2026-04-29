@@ -1,64 +1,101 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import ErdMermaidDiagram from "./ErdMermaidDiagram";
+import { DraftSectionEditModal } from "./DraftSectionEditModal";
+import type { DraftContentPatch } from "./draft-content-types";
 
-type TabKey = "idea" | "screens" | "api" | "erd" | "questions";
+export type { DraftContentPatch } from "./draft-content-types";
+
+type TabKey = "idea" | "screens" | "erd" | "questions";
+
+type ModalKey = keyof DraftContentPatch;
 
 export default function DraftViewer({
   contentJson,
   decisions,
   onDecisionsChange,
   readOnly = true,
+  onSaveContentPatch,
 }: {
   contentJson: any;
   decisions?: Record<string, any>;
   onDecisionsChange?: (next: Record<string, any>) => void;
   readOnly?: boolean;
+  /** 직접 수정 저장 — 성공 시 null, 실패 시 에러 문자열 */
+  onSaveContentPatch?: (patch: DraftContentPatch) => Promise<string | null>;
 }) {
   const [tab, setTab] = useState<TabKey>("idea");
+  const [modal, setModal] = useState<{
+    key: ModalKey;
+    title: string;
+    seed: unknown;
+  } | null>(null);
+  const [modalErr, setModalErr] = useState<string | null>(null);
+  const [modalSaving, setModalSaving] = useState(false);
 
   const content = contentJson ?? null;
   const idea = content?.ideaNormalized;
+  const canStructEdit = Boolean(onSaveContentPatch) && !readOnly;
 
   const view =
     tab === "idea"
       ? content?.ideaNormalized
       : tab === "screens"
-      ? content?.screens
-      : tab === "api"
-      ? content?.apiSpec
-      : tab === "erd"
-      ? content?.erd
-      : content?.questions;
+        ? content?.screens
+        : tab === "erd"
+          ? content?.erd
+          : content?.questions;
+
+  function openModal(key: ModalKey, title: string, value: unknown) {
+    setModalErr(null);
+    setModal({
+      key,
+      title,
+      seed: value ?? {},
+    });
+  }
+
+  async function handleModalSave(payload: unknown): Promise<boolean> {
+    if (!modal || !onSaveContentPatch) return false;
+    setModalSaving(true);
+    setModalErr(null);
+    const err = await onSaveContentPatch({
+      [modal.key]: payload,
+    } as DraftContentPatch);
+    setModalSaving(false);
+    if (err) {
+      setModalErr(err);
+      return false;
+    }
+    setModal(null);
+    return true;
+  }
 
   return (
     <div className="rounded-xl border bg-gray-50 p-4 text-sm text-gray-900 dark:bg-neutral-950 dark:text-neutral-100 dark:border-neutral-800">
       {/* Tabs */}
       <div className="flex flex-wrap items-center gap-2">
-        {(["idea", "screens", "api", "erd", "questions"] as TabKey[]).map(
-          (t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-semibold border
+        {(["idea", "screens", "erd", "questions"] as TabKey[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`rounded-lg px-3 py-1.5 text-sm font-semibold border
               ${
                 tab === t
                   ? "bg-black text-white dark:bg-white dark:text-black"
                   : "bg-white text-gray-800 hover:bg-gray-100 dark:bg-neutral-950 dark:text-neutral-100 dark:hover:bg-neutral-900 dark:border-neutral-800"
               }`}
-            >
-              {t === "idea"
-                ? "아이디어"
-                : t === "screens"
+          >
+            {t === "idea"
+              ? "아이디어"
+              : t === "screens"
                 ? "화면"
-                : t === "api"
-                ? "API"
                 : t === "erd"
-                ? "ERD"
-                : "질문"}
-            </button>
-          )
-        )}
+                  ? "ERD"
+                  : "질문"}
+          </button>
+        ))}
       </div>
 
       {/* Content */}
@@ -69,27 +106,129 @@ export default function DraftViewer({
               아직 아이디어 정보가 없어요.
             </div>
           ) : (
-            <IdeaCards idea={idea} />
+            <>
+              {canStructEdit && (
+                <div className="mb-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openModal(
+                        "ideaNormalized",
+                        "아이디어(ideaNormalized) 수정",
+                        content?.ideaNormalized,
+                      )
+                    }
+                    className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                  >
+                    이 내용 수정
+                  </button>
+                </div>
+              )}
+              <IdeaCards idea={idea} />
+            </>
           )
         ) : tab === "screens" ? (
-          <ScreensView screens={content?.screens} />
-        ) : tab === "api" ? (
-          <ApiView apiSpec={content?.apiSpec} />
+          <>
+            {canStructEdit && (
+              <div className="mb-3 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    openModal(
+                      "screens",
+                      "화면 목록(screens) 수정",
+                      content?.screens,
+                    )
+                  }
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                >
+                  화면 목록 수정
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    openModal(
+                      "apiSpec",
+                      "API 명세(apiSpec) 수정",
+                      content?.apiSpec,
+                    )
+                  }
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                >
+                  API 명세 수정
+                </button>
+              </div>
+            )}
+            <ScreensView
+              screens={content?.screens}
+              apiSpec={content?.apiSpec}
+            />
+          </>
         ) : tab === "erd" ? (
-          <ErdView erd={content?.erd} />
+          <>
+            {canStructEdit && (
+              <div className="mb-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() =>
+                    openModal("erd", "ERD(erd) 수정", content?.erd)
+                  }
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                >
+                  이 내용 수정
+                </button>
+              </div>
+            )}
+            <ErdView erd={content?.erd} />
+          </>
         ) : tab === "questions" ? (
-          <QuestionsView
-            questions={content?.questions}
-            value={decisions ?? content?.decisions?.answers ?? {}}
-            readOnly={readOnly}
-            onChange={onDecisionsChange}
-          />
+          <>
+            {canStructEdit && (
+              <div className="mb-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() =>
+                    openModal(
+                      "questions",
+                      "질문 목록(questions) 수정",
+                      content?.questions,
+                    )
+                  }
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                >
+                  질문 목록 수정
+                </button>
+              </div>
+            )}
+            <QuestionsView
+              questions={content?.questions}
+              value={decisions ?? content?.decisions?.answers ?? {}}
+              readOnly={readOnly}
+              onChange={onDecisionsChange}
+            />
+          </>
         ) : (
-          <pre className="whitespace-pre-wrap break-words text-xs mt-2">
-            {JSON.stringify(view ?? { message: "내용이 아직 없어요." }, null, 2)}
+          <pre className="mt-2 whitespace-pre-wrap break-words text-xs">
+            {JSON.stringify(
+              view ?? { message: "내용이 아직 없어요." },
+              null,
+              2,
+            )}
           </pre>
         )}
       </div>
+
+      {modal && (
+        <DraftSectionEditModal
+          modalKey={modal.key}
+          title={modal.title}
+          initial={modal.seed}
+          saving={modalSaving}
+          error={modalErr}
+          onClose={() => !modalSaving && setModal(null)}
+          onSave={handleModalSave}
+        />
+      )}
     </div>
   );
 }
@@ -155,8 +294,7 @@ function IdeaCards({ idea }: { idea: any }) {
       <div className="flex flex-wrap gap-2">
         <Badge tone="indigo">{idea?.project_meta?.domain ?? "도메인"}</Badge>
         <Badge tone="gray">
-          {safeArr(idea?.project_meta?.target_platforms).join(", ") ||
-            "플랫폼"}
+          {safeArr(idea?.project_meta?.target_platforms).join(", ") || "플랫폼"}
         </Badge>
         <Badge tone="emerald">
           {idea?.project_meta?.primary_language ?? "언어"}
@@ -194,7 +332,7 @@ function IdeaCards({ idea }: { idea: any }) {
                 <Badge key={idx} tone="emerald">
                   {v}
                 </Badge>
-              )
+              ),
             )}
           </div>
         </Card>
@@ -203,9 +341,7 @@ function IdeaCards({ idea }: { idea: any }) {
       {/* 핵심 기능 */}
       <Card
         title="핵심 기능"
-        right={
-          <Badge tone="gray">{safeArr(idea?.features).length}개</Badge>
-        }
+        right={<Badge tone="gray">{safeArr(idea?.features).length}개</Badge>}
       >
         <div className="grid gap-3 md:grid-cols-2">
           {safeArr(idea?.features).map((f: any, idx: number) => (
@@ -238,9 +374,7 @@ function IdeaCards({ idea }: { idea: any }) {
       <Card
         title="사용자/역할"
         right={
-          <Badge tone="gray">
-            {safeArr(idea?.users_and_roles).length}개
-          </Badge>
+          <Badge tone="gray">{safeArr(idea?.users_and_roles).length}개</Badge>
         }
       >
         <div className="overflow-x-auto">
@@ -266,7 +400,7 @@ function IdeaCards({ idea }: { idea: any }) {
                           <Badge key={j} tone="gray">
                             {p}
                           </Badge>
-                        )
+                        ),
                       )}
                     </div>
                   </td>
@@ -306,8 +440,7 @@ function IdeaCards({ idea }: { idea: any }) {
               범위 불명확: {idea?.quality_flags?.ambiguous_scope ?? "-"}
             </Badge>
             <Badge tone="gray">
-              역할 누락:{" "}
-              {idea?.quality_flags?.missing_role_definitions ?? "-"}
+              역할 누락: {idea?.quality_flags?.missing_role_definitions ?? "-"}
             </Badge>
             <Badge tone="gray">
               불확실 위험: {idea?.quality_flags?.high_risk_uncertainty ?? "-"}
@@ -335,14 +468,14 @@ function IdeaCards({ idea }: { idea: any }) {
                   <Badge key={idx} tone="emerald">
                     {s}
                   </Badge>
-                )
+                ),
               )}
               {safeArr(idea?.non_functional_requirements?.performance).map(
                 (p: string, idx: number) => (
                   <Badge key={idx} tone="amber">
                     {p}
                   </Badge>
-                )
+                ),
               )}
             </div>
           </div>
@@ -352,16 +485,46 @@ function IdeaCards({ idea }: { idea: any }) {
   );
 }
 
-function ScreensView({ screens }: { screens: any }) {
+function methodTone(m?: string) {
+  const mm = (m ?? "").toUpperCase();
+  if (mm === "GET") return "emerald";
+  if (mm === "POST") return "indigo";
+  if (mm === "PUT" || mm === "PATCH") return "amber";
+  if (mm === "DELETE") return "rose";
+  return "gray";
+}
+
+/** apiSpec.endpoints 와 화면 required_apis 매칭용 */
+function apiEndpointKey(method?: string, path?: string) {
+  return `${String(method ?? "")
+    .toUpperCase()
+    .trim()} ${String(path ?? "").trim()}`.trim();
+}
+
+function endpointAuthByMethodPath(apiSpec: any): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const e of safeArr(apiSpec?.endpoints)) {
+    const k = apiEndpointKey(e?.method, e?.path);
+    if (k && !m.has(k)) m.set(k, String(e?.auth_required ?? ""));
+  }
+  return m;
+}
+
+function screenAuthBadge(auth?: string) {
+  const tone = auth === "yes" ? "rose" : "gray";
+  const label =
+    auth === "yes" ? "필요" : auth === "no" ? "불필요" : "알 수 없음";
+  return { tone, label } as const;
+}
+
+function ScreensView({ screens, apiSpec }: { screens: any; apiSpec: any }) {
   const list = safeArr(screens?.screens);
   const nav = safeArr(screens?.navigation);
+  const epAuth = useMemo(() => endpointAuthByMethodPath(apiSpec), [apiSpec]);
 
   return (
     <div className="mt-2 grid gap-4">
-      <Card
-        title="화면"
-        right={<Badge tone="gray">{list.length}개</Badge>}
-      >
+      <Card title="화면" right={<Badge tone="gray">{list.length}개</Badge>}>
         {list.length === 0 ? (
           <p className="text-sm text-gray-500 dark:text-neutral-400">
             화면이 없어요.
@@ -374,48 +537,83 @@ function ScreensView({ screens }: { screens: any }) {
                   <th className="py-2 pr-3">이름</th>
                   <th className="py-2 pr-3">경로</th>
                   <th className="py-2 pr-3">역할</th>
+                  <th className="py-2 pr-3">화면 인증</th>
                   <th className="py-2">API</th>
                 </tr>
               </thead>
               <tbody>
-                {list.map((s: any) => (
-                  <tr
-                    key={s?.id ?? Math.random()}
-                    className="border-b dark:border-neutral-800"
-                  >
-                    <td className="py-3 pr-3 font-semibold">
-                      {s?.name ?? "-"}
-                      <div className="mt-1 text-xs text-gray-500 dark:text-neutral-400">
-                        {s?.goal ?? ""}
-                      </div>
-                    </td>
-                    <td className="py-3 pr-3">
-                      <code className="text-xs">{s?.route ?? "-"}</code>
-                    </td>
-                    <td className="py-3 pr-3">
-                      <div className="flex flex-wrap gap-2">
-                        {safeArr(s?.actor_roles).map(
-                          (r: string, idx: number) => (
-                            <Badge key={idx} tone="indigo">
-                              {r}
-                            </Badge>
-                          )
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-3">
-                      <div className="flex flex-wrap gap-2">
-                        {safeArr(s?.required_apis).map(
-                          (a: any, idx: number) => (
-                            <Badge key={idx} tone="gray">
-                              {a?.method ?? "METHOD"} {a?.path ?? "PATH"}
-                            </Badge>
-                          )
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {list.map((s: any) => {
+                  const scr = screenAuthBadge(s?.permissions?.auth_required);
+                  return (
+                    <tr
+                      key={s?.id ?? Math.random()}
+                      className="border-b dark:border-neutral-800"
+                    >
+                      <td className="py-3 pr-3 font-semibold">
+                        {s?.name ?? "-"}
+                        <div className="mt-1 text-xs text-gray-500 dark:text-neutral-400">
+                          {s?.goal ?? ""}
+                        </div>
+                      </td>
+                      <td className="py-3 pr-3">
+                        <code className="text-xs">{s?.route ?? "-"}</code>
+                      </td>
+                      <td className="py-3 pr-3">
+                        <div className="flex flex-wrap gap-2">
+                          {safeArr(s?.actor_roles).map(
+                            (r: string, idx: number) => (
+                              <Badge key={idx} tone="indigo">
+                                {r}
+                              </Badge>
+                            ),
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 pr-3">
+                        <Badge tone={scr.tone as any}>{scr.label}</Badge>
+                      </td>
+                      <td className="py-3">
+                        <div className="flex flex-col gap-2">
+                          {safeArr(s?.required_apis).map(
+                            (a: any, idx: number) => {
+                              const k = apiEndpointKey(a?.method, a?.path);
+                              const ar = epAuth.get(k);
+                              return (
+                                <div
+                                  key={idx}
+                                  className="flex flex-col gap-1 rounded-md border border-gray-100 bg-gray-50/80 px-2 py-1.5 dark:border-neutral-800 dark:bg-neutral-900/60"
+                                >
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <Badge tone={methodTone(a?.method) as any}>
+                                      {a?.method ?? "?"}
+                                    </Badge>
+                                    <code className="text-xs">
+                                      {a?.path ?? "-"}
+                                    </code>
+                                    {ar === "yes" || ar === "no" ? (
+                                      <Badge
+                                        tone={ar === "yes" ? "rose" : "gray"}
+                                      >
+                                        {ar === "yes"
+                                          ? "API 인증 필요"
+                                          : "API 인증 불필요"}
+                                      </Badge>
+                                    ) : null}
+                                  </div>
+                                  {a?.purpose ? (
+                                    <span className="text-xs text-gray-500 dark:text-neutral-400">
+                                      {a.purpose}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              );
+                            },
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -444,74 +642,62 @@ function ScreensView({ screens }: { screens: any }) {
   );
 }
 
-function methodTone(m?: string) {
-  const mm = (m ?? "").toUpperCase();
-  if (mm === "GET") return "emerald";
-  if (mm === "POST") return "indigo";
-  if (mm === "PUT" || mm === "PATCH") return "amber";
-  if (mm === "DELETE") return "rose";
-  return "gray";
-}
+const ERD_COL_PREVIEW = 6;
 
-function ApiView({ apiSpec }: { apiSpec: any }) {
-  const endpoints = safeArr(apiSpec?.endpoints);
+function ErdEntityCard({ entity }: { entity: any }) {
+  const [expanded, setExpanded] = useState(false);
+  const cols = safeArr(entity?.columns);
+  const idxs = safeArr(entity?.indexes);
+  const pkCount = cols.filter((c: any) => c?.pk === "yes").length;
+  const hasMore = cols.length > ERD_COL_PREVIEW;
+  const visibleCols =
+    expanded || !hasMore ? cols : cols.slice(0, ERD_COL_PREVIEW);
 
   return (
-    <div className="mt-2 grid gap-4">
-      <Card
-        title="API 엔드포인트"
-        right={<Badge tone="gray">{endpoints.length}개</Badge>}
-      >
-        {endpoints.length === 0 ? (
-          <p className="text-sm text-gray-500 dark:text-neutral-400">
-            엔드포인트가 없어요.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-xs text-gray-500 dark:text-neutral-400">
-                <tr className="border-b dark:border-neutral-800">
-                  <th className="py-2 pr-3">메서드</th>
-                  <th className="py-2 pr-3">경로</th>
-                  <th className="py-2 pr-3">인증</th>
-                  <th className="py-2">요약</th>
-                </tr>
-              </thead>
-              <tbody>
-                {endpoints.map((e: any) => (
-                  <tr
-                    key={e?.id ?? Math.random()}
-                    className="border-b dark:border-neutral-800"
-                  >
-                    <td className="py-3 pr-3">
-                      <Badge tone={methodTone(e?.method) as any}>
-                        {e?.method ?? "-"}
-                      </Badge>
-                    </td>
-                    <td className="py-3 pr-3">
-                      <code className="text-xs">{e?.path ?? "-"}</code>
-                    </td>
-                    <td className="py-3 pr-3">
-                      <Badge
-                        tone={e?.auth_required === "yes" ? "rose" : "gray"}
-                      >
-                        {e?.auth_required === "yes"
-                          ? "필요"
-                          : e?.auth_required === "no"
-                          ? "불필요"
-                          : "알 수 없음"}
-                      </Badge>
-                    </td>
-                    <td className="py-3 text-gray-600 dark:text-neutral-300">
-                      {e?.summary ?? "-"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+    <div className="rounded-lg border p-3 bg-white dark:bg-neutral-950 dark:border-neutral-800">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="font-semibold">{entity?.name ?? "엔티티"}</div>
+          <div className="mt-1 text-xs text-gray-500 dark:text-neutral-400">
+            {entity?.description ?? "-"}
           </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 justify-end">
+          <Badge tone="indigo">컬럼: {cols.length}</Badge>
+          <Badge tone="gray">PK: {pkCount}</Badge>
+          <Badge tone="gray">인덱스: {idxs.length}</Badge>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-2">
+        {visibleCols.map((c: any, i: number) => (
+          <div
+            key={`${String(c?.name)}-${i}`}
+            className="flex flex-wrap items-center gap-2 text-xs"
+          >
+            <code className="rounded bg-gray-100 px-2 py-0.5 text-gray-800 dark:bg-neutral-900 dark:text-neutral-100">
+              {c?.name ?? "col"}
+            </code>
+            <Badge tone="gray">{c?.type ?? "type"}</Badge>
+            {c?.pk === "yes" && <Badge tone="rose">PK</Badge>}
+            {c?.unique === "yes" && <Badge tone="amber">UNIQUE</Badge>}
+            {c?.nullable === "no" && <Badge tone="emerald">NOT NULL</Badge>}
+          </div>
+        ))}
+
+        {hasMore && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="text-left text-xs font-semibold text-indigo-700 hover:text-indigo-900 hover:underline dark:text-indigo-300 dark:hover:text-indigo-100"
+          >
+            {expanded
+              ? "컬럼 접기"
+              : `+${cols.length - ERD_COL_PREVIEW}개 컬럼 더 보기`}
+          </button>
         )}
-      </Card>
+      </div>
     </div>
   );
 }
@@ -533,78 +719,31 @@ function ErdView({ erd }: { erd: any }) {
         </Badge>
       </div>
 
-      <Card
-        title="엔티티"
-        right={<Badge tone="gray">{entities.length}</Badge>}
-      >
+      <Card title="다이어그램 (Mermaid)" right={null}>
+        <ErdMermaidDiagram
+          erd={erd}
+          className="border-0 bg-transparent shadow-none"
+        />
+      </Card>
+
+      <Card title="엔티티" right={<Badge tone="gray">{entities.length}</Badge>}>
         {entities.length === 0 ? (
           <p className="text-sm text-gray-500 dark:text-neutral-400">
             엔티티가 없어요.
           </p>
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
-            {entities.map((e: any) => {
-              const cols = safeArr(e?.columns);
-              const idxs = safeArr(e?.indexes);
-              const pkCount = cols.filter((c: any) => c?.pk === "yes").length;
-
-              return (
-                <div
-                  key={e?.name ?? Math.random()}
-                  className="rounded-lg border p-3 bg-white dark:bg-neutral-950 dark:border-neutral-800"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-semibold">{e?.name ?? "엔티티"}</div>
-                      <div className="mt-1 text-xs text-gray-500 dark:text-neutral-400">
-                        {e?.description ?? "-"}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 justify-end">
-                      <Badge tone="indigo">컬럼: {cols.length}</Badge>
-                      <Badge tone="gray">PK: {pkCount}</Badge>
-                      <Badge tone="gray">인덱스: {idxs.length}</Badge>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 grid gap-2">
-                    {cols.slice(0, 6).map((c: any, i: number) => (
-                      <div
-                        key={i}
-                        className="flex flex-wrap items-center gap-2 text-xs"
-                      >
-                        <code className="rounded bg-gray-100 px-2 py-0.5 text-gray-800 dark:bg-neutral-900 dark:text-neutral-100">
-                          {c?.name ?? "col"}
-                        </code>
-                        <Badge tone="gray">{c?.type ?? "type"}</Badge>
-                        {c?.pk === "yes" && <Badge tone="rose">PK</Badge>}
-                        {c?.unique === "yes" && (
-                          <Badge tone="amber">UNIQUE</Badge>
-                        )}
-                        {c?.nullable === "no" && (
-                          <Badge tone="emerald">NOT NULL</Badge>
-                        )}
-                      </div>
-                    ))}
-
-                    {cols.length > 6 && (
-                      <div className="text-xs text-gray-500 dark:text-neutral-400">
-                        +{cols.length - 6}개 더 보기...
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+            {entities.map((e: any, idx: number) => (
+              <ErdEntityCard
+                key={`${String(e?.name ?? "entity")}-${idx}`}
+                entity={e}
+              />
+            ))}
           </div>
         )}
       </Card>
 
-      <Card
-        title="관계"
-        right={<Badge tone="gray">{rels.length}</Badge>}
-      >
+      <Card title="관계" right={<Badge tone="gray">{rels.length}</Badge>}>
         {rels.length === 0 ? (
           <p className="text-sm text-gray-500 dark:text-neutral-400">
             관계가 없어요.

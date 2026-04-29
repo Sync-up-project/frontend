@@ -1,12 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import ThemeToggle from "@/components/theme-toggle";
 import DraftViewer from "@/components/draft/DraftViewer";
 import KanbanBoardDndView from "@/components/kanban/KanbanBoardDndView";
 import { fetchCurrentUser, getAccessToken, getCurrentUser } from "@/lib/auth";
+import {
+  apiGetProjectMeParticipation,
+  apiPatchInvitation,
+  apiPostProjectApplication,
+} from "@/lib/api";
 
 type Project = {
   id: string;
@@ -185,6 +190,22 @@ export default function ProjectDetailPage({
   // ✅ 프로젝트 삭제 상태
   const [projectDeleting, setProjectDeleting] = useState(false);
 
+  const [participation, setParticipation] = useState<{
+    isOwner: boolean;
+    isMember: boolean;
+    pendingInvitation: {
+      id: string;
+      inviterId: string;
+      message: string | null;
+      createdAt: string;
+    } | null;
+    pendingApplication: { id: string; createdAt: string } | null;
+  } | null>(null);
+  const [participationLoading, setParticipationLoading] = useState(false);
+  const [joinModalOpen, setJoinModalOpen] = useState(false);
+  const [applyMessage, setApplyMessage] = useState("");
+  const [participationBusy, setParticipationBusy] = useState(false);
+
   // ---- Add Card Modal state ----
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addTargetColumn, setAddTargetColumn] = useState<{
@@ -359,6 +380,7 @@ export default function ProjectDetailPage({
   const isOwner = Boolean(
     projectOwnerId && currentUserId && String(projectOwnerId) === String(currentUserId)
   );
+  const isMember = Boolean(participation?.isMember);
 
   useEffect(() => {
     let mounted = true;
@@ -400,10 +422,38 @@ export default function ProjectDetailPage({
   }, [projectId]);
 
   useEffect(() => {
-    if (!isOwner && (tab === "artifact" || tab === "raw")) {
-      setTab("overview");
+    if (isOwner) return;
+    if (isMember) {
+      if (tab === "raw" || tab === "board") setTab("overview");
+      return;
     }
-  }, [isOwner, tab]);
+    if (tab === "artifact" || tab === "raw") setTab("overview");
+  }, [isOwner, isMember, tab]);
+
+  const reloadParticipation = useCallback(async () => {
+    if (!currentUserId || !projectId) {
+      setParticipation(null);
+      return;
+    }
+    setParticipationLoading(true);
+    try {
+      const token = getAccessToken();
+      if (!token) {
+        setParticipation(null);
+        return;
+      }
+      const json = await apiGetProjectMeParticipation(projectId);
+      setParticipation(json ?? null);
+    } catch {
+      setParticipation(null);
+    } finally {
+      setParticipationLoading(false);
+    }
+  }, [projectId, currentUserId]);
+
+  useEffect(() => {
+    reloadParticipation();
+  }, [reloadParticipation]);
 
   const decisionsContainer = (latestArtifact as any)?.contentJson?.decisions;
   const decisions = decisionsContainer?.answers ?? null;
@@ -412,11 +462,10 @@ export default function ProjectDetailPage({
   const policy = (data as any)?.policy ?? null;
 
   const latestArtifactId = latestArtifact?.meta?.id ?? null;
-  const tabs = useMemo(() => {
-    return isOwner
-      ? (["overview", "board", "artifact", "raw"] as const)
-      : (["overview", "board"] as const);
-  }, [isOwner]);
+  const ownerTabs = useMemo(
+    () => ["overview", "board", "artifact", "raw"] as const,
+    []
+  );
 
   const idea = latestArtifact?.contentJson?.ideaNormalized;
   const ideaTitle =
@@ -613,13 +662,109 @@ export default function ProjectDetailPage({
           </p>
           <div className="mt-2">{headerBadges}</div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Link
             href="/projects"
             className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
           >
             프로젝트 목록
           </Link>
+
+          {isOwner && (
+            <Link
+              href="/projects/manage"
+              title="추천 멤버에서 초대할 수 있어요"
+              className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-800 hover:bg-indigo-100"
+            >
+              멤버 초대
+            </Link>
+          )}
+
+          {!isOwner && currentUserId && participation && !participation.isMember && participation.pendingInvitation && (
+            <>
+              <button
+                type="button"
+                disabled={participationBusy}
+                onClick={async () => {
+                  const token = getAccessToken();
+                  if (!token || !participation.pendingInvitation) return;
+                  setParticipationBusy(true);
+                  try {
+                    await apiPatchInvitation(participation.pendingInvitation.id, {
+                      decision: "ACCEPT",
+                    });
+                    await reloadParticipation();
+                    await fetchProjectDetail();
+                  } catch (e) {
+                    alert(String(e));
+                  } finally {
+                    setParticipationBusy(false);
+                  }
+                }}
+                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                초대 수락
+              </button>
+              <button
+                type="button"
+                disabled={participationBusy}
+                onClick={async () => {
+                  const token = getAccessToken();
+                  if (!token || !participation.pendingInvitation) return;
+                  setParticipationBusy(true);
+                  try {
+                    await apiPatchInvitation(participation.pendingInvitation.id, {
+                      decision: "REJECT",
+                    });
+                    await reloadParticipation();
+                  } catch (e) {
+                    alert(String(e));
+                  } finally {
+                    setParticipationBusy(false);
+                  }
+                }}
+                className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+              >
+                초대 거절
+              </button>
+            </>
+          )}
+
+          {!isOwner &&
+            currentUserId &&
+            participation &&
+            !participation.isMember &&
+            !participation.pendingInvitation &&
+            !participation.pendingApplication && (
+              <button
+                type="button"
+                onClick={() => setJoinModalOpen(true)}
+                className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700"
+              >
+                참가 신청
+              </button>
+            )}
+
+          {!isOwner && currentUserId && participation?.pendingApplication && (
+            <span className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+              참가 신청 검토 중
+            </span>
+          )}
+
+          {!isOwner && currentUserId && participation?.isMember && (
+            <span className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+              멤버
+            </span>
+          )}
+
+          {!currentUserId && (
+            <Link
+              href="/login"
+              className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              로그인 후 참가
+            </Link>
+          )}
 
           {isOwner ? (
             <>
@@ -639,11 +784,7 @@ export default function ProjectDetailPage({
                 드래프트
               </Link>
             </>
-          ) : (
-            <span className="rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-600">
-              오너 전용 기능 숨김
-            </span>
-          )}
+          ) : null}
           <ThemeToggle />
         </div>
       </div>
@@ -660,10 +801,10 @@ export default function ProjectDetailPage({
         {loading && <p>불러오는 중...</p>}
         {!loading && !data && <p>프로젝트를 찾을 수 없어요.</p>}
 
-        {/* Tabs */}
-        {!loading && data && (
+        {/* Tabs: 소유자 4탭 / 참여 멤버는 프로젝트·기획 상세 */}
+        {!loading && data && isOwner && (
           <div className="mb-6 flex flex-wrap items-center gap-2">
-            {tabs.map((t) => (
+            {ownerTabs.map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -685,6 +826,34 @@ export default function ProjectDetailPage({
             ))}
           </div>
         )}
+        {!loading && data && !isOwner && isMember && (
+          <div className="mb-6 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setTab("overview")}
+              className={`rounded-xl border px-4 py-2 text-sm font-semibold transition-colors
+                ${
+                  tab === "overview"
+                    ? "border-gray-900 bg-gray-900 text-white"
+                    : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                }`}
+            >
+              프로젝트
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab("artifact")}
+              className={`rounded-xl border px-4 py-2 text-sm font-semibold transition-colors
+                ${
+                  tab === "artifact"
+                    ? "border-gray-900 bg-gray-900 text-white"
+                    : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                }`}
+            >
+              기획 상세
+            </button>
+          </div>
+        )}
 
         {/* Common Cards */}
         {!loading && data && (
@@ -698,8 +867,8 @@ export default function ProjectDetailPage({
           </div>
         )}
 
-        {/* Overview tab */}
-        {!loading && data && tab === "overview" && (
+        {/* Overview tab (소유자) */}
+        {!loading && data && isOwner && tab === "overview" && (
           <div className="mt-4 grid gap-6">
             <Card title="요약">
               <div className="text-gray-700">
@@ -742,8 +911,108 @@ export default function ProjectDetailPage({
           </div>
         )}
 
-        {/* Board tab */}
-        {!loading && data && tab === "board" && (
+        {/* 방문자·참여 멤버(프로젝트 탭): 요약·설명 + 칸반 */}
+        {!loading &&
+          data &&
+          !isOwner &&
+          (!isMember || (isMember && tab === "overview")) && (
+          <div className="mt-4 grid gap-6">
+            <Card title="요약">
+              <div className="text-gray-700">
+                <div className="font-semibold">{ideaTitle}</div>
+                <p className="mt-2 text-sm text-gray-600">{oneLiner}</p>
+                <div className="mt-3 grid gap-2 text-xs text-gray-600 sm:grid-cols-3">
+                  <div className="rounded-xl bg-gray-50 px-3 py-2">
+                    오너 ID: <code>{projectOwnerId ?? "-"}</code>
+                  </div>
+                  <div className="rounded-xl bg-gray-50 px-3 py-2">
+                    모집 마감일: {formatDateTime(project?.deadline ?? null)}
+                  </div>
+                  <div className="rounded-xl bg-gray-50 px-3 py-2">
+                    프로젝트 마감일: {formatDateTime(project?.endDate ?? null)}
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card title="설명">
+                <p className="text-gray-600">{project?.descriptionOriginal ?? "-"}</p>
+              </Card>
+              <MembersSummaryCard project={project} />
+            </div>
+
+            <ArtifactSummaryCard
+              latestArtifact={latestArtifact}
+              featuresCount={featuresCount}
+            />
+
+            <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-900">작업 보드</h2>
+              <p className="mt-1 text-xs text-gray-500">
+                아래에서 카드를 추가·수정할 수 있어요.
+              </p>
+              <div className="mt-4">
+                {boardError ? (
+                  <pre className="text-xs text-red-600 whitespace-pre-wrap">
+                    {boardError}
+                  </pre>
+                ) : boardLoading ? (
+                  <div className="text-sm text-gray-500">보드를 불러오는 중...</div>
+                ) : !board ? (
+                  <div className="text-sm text-gray-500">
+                    칸반 보드를 찾을 수 없어요.
+                  </div>
+                ) : (
+                  <KanbanBoardDndView
+                    projectId={projectId}
+                    board={board}
+                    setBoard={(b) => setBoard(b)}
+                    refetchBoard={fetchBoard}
+                    onAddCard={(columnId, columnTitle) =>
+                      openAddCardModal(columnId, columnTitle)
+                    }
+                    onEditCard={(card, columnTitle) =>
+                      openEditCardModal(card, columnTitle)
+                    }
+                    onDeleteCard={(cardId, cardTitle, columnTitle) =>
+                      openDeleteModal(cardId, cardTitle, columnTitle)
+                    }
+                  />
+                )}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {/* 참여 멤버 — 기획 상세 (DraftViewer 읽기 전용) */}
+        {!loading && data && !isOwner && isMember && tab === "artifact" && (
+          <div className="mt-4 grid gap-6">
+            <p className="rounded-xl border border-indigo-100 bg-indigo-50/80 px-4 py-3 text-xs text-indigo-900">
+              확정 시 연결된 AI 기획 산출물이에요. 화면·API·ERD 등은 읽기만 가능하고, 수정·재생성은
+              프로젝트 소유자만 할 수 있어요.
+            </p>
+            {!latestArtifact ? (
+              <p className="text-sm text-gray-500">연결된 기획 문서가 없어요.</p>
+            ) : (
+              <>
+                <Card
+                  title="기획 산출물"
+                  right={<Badge tone="gray">{latestArtifact.meta.id}</Badge>}
+                >
+                  <div className="flex flex-wrap gap-2">
+                    <Badge tone="indigo">{latestArtifact.meta.type}</Badge>
+                    <Badge tone="gray">버전 {latestArtifact.meta.version}</Badge>
+                  </div>
+                </Card>
+                <DraftViewer contentJson={latestArtifact.contentJson} />
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Board tab (소유자) */}
+        {!loading && data && isOwner && tab === "board" && (
           <div className="mt-4 grid gap-6">
             <KanbanSummaryCard
               board={board}
@@ -979,6 +1248,71 @@ export default function ProjectDetailPage({
         onClose={closeDeleteModal}
         onSubmit={submitDelete}
       />
+
+      {joinModalOpen && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 px-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setJoinModalOpen(false);
+          }}
+        >
+          <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-lg">
+            <h3 className="text-lg font-semibold text-gray-900">참가 신청</h3>
+            <p className="mt-1 text-xs text-gray-500">
+              프로젝트 오너에게 신청 알림이 전달됩니다.
+            </p>
+            <textarea
+              className="mt-3 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              rows={4}
+              placeholder="간단한 소개 (선택)"
+              value={applyMessage}
+              onChange={(e) => setApplyMessage(e.target.value)}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setJoinModalOpen(false);
+                  setApplyMessage("");
+                }}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={participationBusy}
+                onClick={async () => {
+                  const token = getAccessToken();
+                  if (!token) return;
+                  setParticipationBusy(true);
+                  try {
+                    await apiPostProjectApplication(projectId, {
+                      message: applyMessage.trim() || undefined,
+                    });
+                    alert("참가 신청을 보냈습니다.");
+                    setJoinModalOpen(false);
+                    setApplyMessage("");
+                  } catch (e) {
+                    alert(String(e));
+                    return;
+                  } finally {
+                    setParticipationBusy(false);
+                  }
+                  try {
+                    await reloadParticipation();
+                  } catch {
+                    // 신청은 반영됨. 참가 상태만 갱신 실패 — UI는 다음 로드/새로고침에서 맞춰짐
+                  }
+                }}
+                className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+              >
+                신청하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

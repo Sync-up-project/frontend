@@ -29,15 +29,14 @@ a {
 }
 
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
+  /* 라이트 UI 기본값. 시스템 다크(prefers-color-scheme)로 바꾸지 않음:
+     레이아웃이 bg-white 등 고정 라이트라 상속 텍스트가 배경과 겹침(맥 다크 모드에서 특히 흔함). */
+  --foreground-rgb: 17, 24, 39;
+  --background-start-rgb: 249, 250, 251;
   --background-end-rgb: 255, 255, 255;
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
+html {
+  color-scheme: light;
 }
