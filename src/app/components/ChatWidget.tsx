@@ -4,15 +4,20 @@ import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { io, Socket } from "socket.io-client";
-import { getAccessToken } from "@/lib/auth";
+import { getAccessToken, getApiBaseUrl } from "@/lib/auth";
 
 type ChatTab = "project" | "dm";
+
+/** Prisma Language 와 동일: KO / EN / JA */
+type ChatLang = "KO" | "EN" | "JA";
 
 type ServerChatMessage = {
   id: string;
   senderId?: string;
   username: string;
   message: string;
+  originalLang?: ChatLang;
+  translations?: Partial<Record<ChatLang, string>>;
   timestamp: string | Date;
 };
 
@@ -20,7 +25,12 @@ type UiMessage = {
   id: string;
   side: "me" | "other";
   senderName: string;
+  /** 현재 선택한 표시 언어로 계산된 텍스트 */
   text: string;
+  /** 서버가 저장한 원문 */
+  originalText: string;
+  originalLang: ChatLang;
+  translations?: Partial<Record<ChatLang, string>>;
   timeText: string;
   /** 과거 메시지 페이지네이션용 */
   createdAtIso?: string;
@@ -29,17 +39,38 @@ type UiMessage = {
 const CHAT_CACHE_MAX = 50;
 
 function chatCacheKey(projectId: string) {
-  return `syncup_chat_cache_v2:${projectId}`;
+  return `syncup_chat_cache_v3:${projectId}`;
 }
 
-function readChatCache(projectId: string): UiMessage[] | null {
+function mapProfileLang(raw: unknown): ChatLang {
+  if (raw === "KO" || raw === "EN" || raw === "JA") return raw;
+  return "KO";
+}
+
+function computeDisplayText(
+  originalText: string,
+  originalLang: ChatLang,
+  translations: Partial<Record<ChatLang, string>> | undefined,
+  displayLang: ChatLang
+): string {
+  if (displayLang === originalLang) return originalText;
+  const t = translations?.[displayLang];
+  return typeof t === "string" && t.trim().length > 0 ? t : originalText;
+}
+
+function readChatCache(projectId: string, displayLang: ChatLang): UiMessage[] | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = sessionStorage.getItem(chatCacheKey(projectId));
     if (!raw) return null;
     const j = JSON.parse(raw) as { messages?: unknown };
     if (!Array.isArray(j.messages)) return null;
-    return j.messages as UiMessage[];
+    const out: UiMessage[] = [];
+    for (const row of j.messages) {
+      const n = normalizeCachedRow(row, displayLang);
+      if (n) out.push(n);
+    }
+    return out.length ? out : null;
   } catch {
     return null;
   }
@@ -82,19 +113,58 @@ function formatTime(ts: string | Date) {
   return d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
 }
 
-function serverMessageToUi(m: ServerChatMessage, myId: string | null): UiMessage {
+function serverMessageToUi(
+  m: ServerChatMessage,
+  myId: string | null,
+  displayLang: ChatLang
+): UiMessage {
   const ts = m.timestamp;
   const d = typeof ts === "string" ? new Date(ts) : ts;
   const createdAtIso = Number.isNaN(d.getTime()) ? undefined : d.toISOString();
   const sid = m.senderId ?? "";
   const side = myId && sid && sid === myId ? "me" : "other";
+  const originalLang: ChatLang =
+    m.originalLang === "EN" || m.originalLang === "JA" || m.originalLang === "KO"
+      ? m.originalLang
+      : "KO";
+  const originalText = m.message;
+  const translations = m.translations;
+  const text = computeDisplayText(originalText, originalLang, translations, displayLang);
   return {
     id: String(m.id),
     side,
     senderName: m.username,
-    text: m.message,
+    text,
+    originalText,
+    originalLang,
+    translations,
     timeText: formatTime(ts),
     createdAtIso,
+  };
+}
+
+/** 캐시(v2) 등 구형 필드 보정 */
+function normalizeCachedRow(row: unknown, displayLang: ChatLang): UiMessage | null {
+  if (!row || typeof row !== "object") return null;
+  const r = row as Partial<UiMessage>;
+  if (!r.id || !r.side || !r.senderName || typeof r.text !== "string") return null;
+  const originalLang: ChatLang =
+    r.originalLang === "EN" || r.originalLang === "JA" || r.originalLang === "KO"
+      ? r.originalLang
+      : "KO";
+  const originalText =
+    typeof r.originalText === "string" ? r.originalText : r.text;
+  const translations = r.translations;
+  return {
+    id: String(r.id),
+    side: r.side,
+    senderName: String(r.senderName),
+    originalText,
+    originalLang,
+    translations,
+    text: computeDisplayText(originalText, originalLang, translations, displayLang),
+    timeText: String(r.timeText ?? ""),
+    createdAtIso: r.createdAtIso,
   };
 }
 
@@ -116,19 +186,38 @@ function parseProjectIdFromPath(pathname: string): string | null {
   return decodeURIComponent(m[1]);
 }
 
-async function fetchMyId(): Promise<string | null> {
+async function fetchMe(): Promise<{ id: string | null; chatLang: ChatLang }> {
   const token = getAccessToken();
-  if (!token) return null;
+  if (!token) return { id: null, chatLang: "KO" };
 
-  const res = await fetch("http://localhost:3001/auth/me", {
+  const res = await fetch(`${getApiBaseUrl()}/auth/me`, {
     headers: { Authorization: `Bearer ${token}` },
     credentials: "include",
   });
-  if (!res.ok) return null;
+  if (!res.ok) return { id: null, chatLang: "KO" };
 
   const json = await res.json();
-  const id = json?.id ?? json?.user?.id;
-  return id ? String(id) : null;
+  const u = json?.user ?? json;
+  const id = u?.id ? String(u.id) : null;
+  const chatLang = mapProfileLang(u?.primaryLanguage);
+  return { id, chatLang };
+}
+
+async function patchPrimaryLanguage(lang: ChatLang): Promise<boolean> {
+  const token = getAccessToken();
+  if (!token) return false;
+
+  const res = await fetch(`${getApiBaseUrl()}/users/me`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({ primaryLanguage: lang }),
+  });
+
+  return res.ok;
 }
 
 function useOnClickOutside(
@@ -177,13 +266,35 @@ function Badge({ count }: { count: number }) {
   );
 }
 
-function MessageBubble({ m }: { m: UiMessage }) {
+function langLabel(lang: ChatLang): string {
+  if (lang === "KO") return "KO";
+  if (lang === "EN") return "EN";
+  return "JA";
+}
+
+function MessageBubble({
+  m,
+  displayLang,
+}: {
+  m: UiMessage;
+  displayLang: ChatLang;
+}) {
   const isMe = m.side === "me";
+  const showingTranslation =
+    displayLang !== m.originalLang &&
+    typeof m.translations?.[displayLang] === "string" &&
+    (m.translations![displayLang]!.trim().length ?? 0) > 0;
+
   return (
     <div className={cn("flex w-full", isMe ? "justify-end" : "justify-start")}>
       <div className="max-w-[78%]">
         <div className={cn("text-xs text-gray-500 mb-1", isMe ? "text-right" : "text-left")}>
           {isMe ? "나" : m.senderName}
+          {showingTranslation ? (
+            <span className="ml-2 text-[10px] text-gray-400">
+              · 원문 {langLabel(m.originalLang)} → {langLabel(displayLang)}
+            </span>
+          ) : null}
         </div>
 
         <div
@@ -208,16 +319,35 @@ function MessageBubble({ m }: { m: UiMessage }) {
 export default function ChatWidget() {
   const pathname = usePathname();
 
-  const BACKEND_URL = "http://localhost:3001";
-
-  // ✅ 로그인한 상태에서만 채팅 위젯 노출
+  // ✅ 로그인한 상태에서만 채팅 위젯 노출 + 토큰/세션 변경 시 최신 언어설정 동기화
   const [isAuthed, setIsAuthed] = useState(false);
   useEffect(() => {
-    const sync = () => setIsAuthed(Boolean(getAccessToken()));
-    sync();
-    window.addEventListener("auth:changed", sync);
+    let cancelled = false;
+
+    async function syncAuthAndProfile() {
+      const authed = Boolean(getAccessToken());
+      setIsAuthed(authed);
+      if (!authed) {
+        setMyId(null);
+        return;
+      }
+      const { id, chatLang: lang } = await fetchMe();
+      if (cancelled) return;
+      setMyId(id);
+      setChatLang(lang);
+      chatLangRef.current = lang;
+    }
+
+    void syncAuthAndProfile();
+
+    function onAuthChanged() {
+      void syncAuthAndProfile();
+    }
+
+    window.addEventListener("auth:changed", onAuthChanged);
     return () => {
-      window.removeEventListener("auth:changed", sync);
+      cancelled = true;
+      window.removeEventListener("auth:changed", onAuthChanged);
     };
   }, []);
 
@@ -228,6 +358,7 @@ export default function ChatWidget() {
 
   const [myId, setMyId] = useState<string | null>(null);
   const [myNickname, setMyNickname] = useState<string>("나");
+  const [chatLang, setChatLang] = useState<ChatLang>("KO");
 
   const [projectId, setProjectId] = useState<string | null>(null);
   const [fallbackProjectId, setFallbackProjectId] = useState<string | null>(null);
@@ -241,6 +372,7 @@ export default function ChatWidget() {
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [draft, setDraft] = useState("");
+  const [langSaving, setLangSaving] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -252,6 +384,7 @@ export default function ChatWidget() {
   const scrollRestoreRef = useRef<{ prevHeight: number; prevTop: number } | null>(null);
   const loadOlderDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const effectiveProjectIdRef = useRef<string | null>(null);
+  const chatLangRef = useRef<ChatLang>("KO");
   const messagesRef = useRef<UiMessage[]>([]);
   const hasMoreOlderRef = useRef(false);
   const myNicknameRef = useRef(myNickname);
@@ -271,6 +404,21 @@ export default function ChatWidget() {
   useEffect(() => {
     hasMoreOlderRef.current = hasMoreOlder;
   }, [hasMoreOlder]);
+
+  useEffect(() => {
+    chatLangRef.current = chatLang;
+    setMessages((prev) =>
+      prev.map((m) => ({
+        ...m,
+        text: computeDisplayText(
+          m.originalText,
+          m.originalLang,
+          m.translations,
+          chatLang
+        ),
+      }))
+    );
+  }, [chatLang]);
 
   useOnClickOutside([panelRef, buttonRef], () => setOpen(false), open);
   useEscapeClose(() => setOpen(false), open);
@@ -296,25 +444,10 @@ export default function ChatWidget() {
   }, [pathname]);
 
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      if (!isAuthed) {
-        if (!mounted) return;
-        setMyId(null);
-        return;
-      }
-      const id = await fetchMyId();
-      if (!mounted) return;
-      setMyId(id);
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [isAuthed]);
-
-  useEffect(() => {
     // 로그아웃 시: 열려있던 패널 닫고 소켓 정리
     if (isAuthed) return;
+    setChatLang("KO");
+    chatLangRef.current = "KO";
     setOpen(false);
     setJoinStatus("idle");
     setJoinError(null);
@@ -361,7 +494,7 @@ export default function ChatWidget() {
   function connectSocketIfNeeded() {
     if (socketRef.current) return socketRef.current;
 
-    const s = io(`${BACKEND_URL}/chat`, {
+    const s = io(`${getApiBaseUrl()}/chat`, {
       transports: ["websocket"],
       withCredentials: true,
     });
@@ -380,7 +513,8 @@ export default function ChatWidget() {
     s.on("messageHistory", (raw: unknown) => {
       const { messages: rawMsgs, hasMore } = parseMessageHistoryPayload(raw);
       const uid = myIdRef.current;
-      const mapped = rawMsgs.map((m) => serverMessageToUi(m, uid));
+      const lang = chatLangRef.current;
+      const mapped = rawMsgs.map((m) => serverMessageToUi(m, uid, lang));
       setMessages(mapped);
       setHasMoreOlder(hasMore);
       const pid = effectiveProjectIdRef.current;
@@ -394,7 +528,7 @@ export default function ChatWidget() {
     s.on("message", (m: ServerChatMessage) => {
       setMessages((prev) => {
         if (prev.some((p) => p.id === String(m.id))) return prev;
-        const row = serverMessageToUi(m, myIdRef.current);
+        const row = serverMessageToUi(m, myIdRef.current, chatLangRef.current);
         const next = [...prev, row];
         const pid = effectiveProjectIdRef.current;
         if (pid) writeChatCache(pid, next);
@@ -442,8 +576,9 @@ export default function ChatWidget() {
       }
 
       const uid = myIdRef.current;
+      const lang = chatLangRef.current;
       const older = (ack.messages as ServerChatMessage[]).map((msg) =>
-        serverMessageToUi(msg, uid)
+        serverMessageToUi(msg, uid, lang)
       );
 
       setMessages((prev) => {
@@ -494,7 +629,12 @@ export default function ChatWidget() {
     setLoadingOlder(false);
     loadingOlderRef.current = false;
 
-    const cached = readChatCache(targetProjectId);
+    // 입장 직전 서버의 primaryLanguage 를 다시 받아 캐시/표시/번역 기준을 맞춤 (첫 로드·재입장·타 화면에서 설정 변경 후 동일)
+    const { chatLang: langFromServer } = await fetchMe();
+    setChatLang(langFromServer);
+    chatLangRef.current = langFromServer;
+
+    const cached = readChatCache(targetProjectId, langFromServer);
     if (cached?.length) {
       setMessages(cached);
       setHasMoreOlder(true);
@@ -553,7 +693,7 @@ export default function ChatWidget() {
     const s = socketRef.current;
     if (!s) return;
 
-    s.emit("message", { message: text }, () => {
+    s.emit("message", { message: text, sourceLang: chatLang }, () => {
       // ack 필요 시 여기서 처리 가능
     });
 
@@ -701,6 +841,40 @@ export default function ChatWidget() {
             {tab === "project" && joinError ? (
               <div className="mt-2 text-xs text-red-600">{joinError}</div>
             ) : null}
+
+            {tab === "project" ? (
+              <div className="mt-3 space-y-1">
+                <div className="flex items-center gap-2">
+                  <label htmlFor="syncup-chat-lang" className="text-xs font-bold text-gray-600 shrink-0">
+                    내 언어
+                  </label>
+                  <select
+                    id="syncup-chat-lang"
+                    value={chatLang}
+                    disabled={langSaving}
+                    onChange={async (e) => {
+                      const next = e.target.value as ChatLang;
+                      setLangSaving(true);
+                      try {
+                        const ok = await patchPrimaryLanguage(next);
+                        if (ok) setChatLang(next);
+                      } finally {
+                        setLangSaving(false);
+                      }
+                    }}
+                    className="flex-1 min-w-0 h-9 rounded-lg border border-gray-200 bg-white px-2 text-xs font-semibold text-gray-800 disabled:opacity-60"
+                    aria-label="계정 기본 언어 및 채팅 표시 언어"
+                  >
+                    <option value="KO">한국어 (KO)</option>
+                    <option value="EN">English (EN)</option>
+                    <option value="JA">日本語 (JA)</option>
+                  </select>
+                </div>
+                <p className="text-[11px] text-gray-500 leading-snug">
+                  계정의 기본 언어 설정과 같습니다. 바꾸면 프로필의 언어도 함께 저장됩니다.
+                </p>
+              </div>
+            ) : null}
           </div>
 
           {/* Body */}
@@ -739,7 +913,9 @@ export default function ChatWidget() {
               ) : messages.length === 0 ? (
                 <div className="text-sm text-gray-500 text-center py-16">메시지가 없습니다</div>
               ) : (
-                messages.map((m) => <MessageBubble key={m.id} m={m} />)
+                messages.map((m) => (
+                  <MessageBubble key={m.id} m={m} displayLang={chatLang} />
+                ))
               )}
             </div>
 
