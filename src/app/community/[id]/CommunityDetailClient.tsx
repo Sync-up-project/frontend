@@ -331,7 +331,7 @@ export default function CommunityDetailClient() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white">
+      <div className="min-h-screen bg-white dark:bg-transparent">
         <div className="mx-auto w-full max-w-[980px] px-6 lg:px-10 py-10">
           <p className="text-sm text-gray-500">Loading...</p>
         </div>
@@ -341,7 +341,7 @@ export default function CommunityDetailClient() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-white">
+      <div className="min-h-screen bg-white dark:bg-transparent">
         <div className="mx-auto w-full max-w-[980px] px-6 lg:px-10 py-10">
           <p className="text-sm text-red-600">{error}</p>
           <Link href="/community" className="mt-4 inline-block text-sm text-gray-700 underline">
@@ -355,7 +355,7 @@ export default function CommunityDetailClient() {
   if (!post) return null;
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white dark:bg-transparent">
       <div className="mx-auto w-full max-w-[980px] px-6 lg:px-10 py-6">
         <div className="mb-4 flex items-center justify-between">
           <Link

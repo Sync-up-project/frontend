@@ -293,12 +293,12 @@ export default function ProjectsClient() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-transparent">
       <div className="max-w-screen-2xl mx-auto px-8 py-10">
         <div className="flex items-end justify-between gap-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{tr("프로젝트", "プロジェクト")}</h1>
-            <p className="text-sm text-gray-600 mt-1">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{tr("프로젝트", "プロジェクト")}</h1>
+            <p className="text-sm text-gray-600 dark:text-white/70 mt-1">
               {tr(
                 "원하는 스택과 역할로 참여할 프로젝트를 찾아보세요.",
                 "希望のスタックと役割で参加するプロジェクトを探しましょう。"
@@ -310,7 +310,7 @@ export default function ProjectsClient() {
             <button
               type="button"
               onClick={() => requireLoginThen("/projects/manage")}
-              className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+              className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10"
             >
               {tr("프로젝트 관리", "プロジェクト管理")}
             </button>
@@ -318,7 +318,7 @@ export default function ProjectsClient() {
             <button
               type="button"
               onClick={() => requireLoginThen("/projects/create")}
-              className="inline-flex items-center justify-center rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 transition-colors"
+              className="inline-flex items-center justify-center rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 transition-colors dark:bg-white dark:text-slate-950 dark:hover:bg-white/90"
             >
               {tr("프로젝트 생성", "プロジェクト作成")}
             </button>
@@ -332,13 +332,13 @@ export default function ProjectsClient() {
 
           <div className="min-w-0">
             {loadingList ? (
-              <div className="rounded-2xl border border-gray-200 bg-white p-6 text-sm text-gray-600">
+              <div className="rounded-2xl border border-gray-200 bg-white p-6 text-sm text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-white/70">
                 {tr("불러오는 중...", "読み込み中...")}
               </div>
             ) : listError ? (
-              <div className="rounded-2xl border border-red-200 bg-white p-6 text-sm text-red-700">
+              <div className="rounded-2xl border border-red-200 bg-white p-6 text-sm text-red-700 dark:bg-white/5 dark:border-red-500/30 dark:text-red-200">
                 {tr("목록을 불러오지 못했습니다.", "一覧の取得に失敗しました。")}
-                <div className="mt-2 text-xs text-red-600 break-words">{listError}</div>
+                <div className="mt-2 text-xs text-red-600 dark:text-red-200/80 break-words">{listError}</div>
               </div>
             ) : (
               <>
@@ -346,12 +346,12 @@ export default function ProjectsClient() {
 
                 {filteredAll.length > 0 ? (
                   <div className="mt-6 flex flex-col items-center gap-3">
-                    <p className="text-xs text-gray-500 text-center">
+                    <p className="text-xs text-gray-500 dark:text-white/60 text-center">
                       {tr("총", "合計")}{" "}
-                      <span className="font-semibold text-gray-700">{filteredAll.length}</span>
+                      <span className="font-semibold text-gray-700 dark:text-white/80">{filteredAll.length}</span>
                       {tr("개", "件")} · {tr("페이지", "ページ")}{" "}
-                      <span className="font-semibold text-gray-700">{currentPage}</span> /{" "}
-                      <span className="font-semibold text-gray-700">{totalPages}</span>
+                      <span className="font-semibold text-gray-700 dark:text-white/80">{currentPage}</span> /{" "}
+                      <span className="font-semibold text-gray-700 dark:text-white/80">{totalPages}</span>
                     </p>
 
                     <div className="flex items-center justify-center gap-2">
@@ -362,8 +362,8 @@ export default function ProjectsClient() {
                         className={[
                           "px-3 py-2 rounded-lg border text-sm font-medium transition-colors",
                           currentPage === 1
-                            ? "border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed"
-                            : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50",
+                            ? "border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed dark:border-white/10 dark:bg-white/5 dark:text-white/30"
+                            : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10",
                         ].join(" ")}
                       >
                         {tr("이전", "前へ")}
@@ -378,8 +378,8 @@ export default function ProjectsClient() {
                             className={[
                               "w-9 h-9 rounded-lg text-sm font-semibold border transition-colors",
                               n === currentPage
-                                ? "border-gray-900 bg-gray-900 text-white"
-                                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50",
+                                ? "border-gray-900 bg-gray-900 text-white dark:border-white/10 dark:bg-white dark:text-slate-950"
+                                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10",
                             ].join(" ")}
                             aria-label={tr(`${n}페이지`, `${n}ページ`)}
                           >
@@ -395,8 +395,8 @@ export default function ProjectsClient() {
                         className={[
                           "px-3 py-2 rounded-lg border text-sm font-medium transition-colors",
                           currentPage === totalPages
-                            ? "border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed"
-                            : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50",
+                            ? "border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed dark:border-white/10 dark:bg-white/5 dark:text-white/30"
+                            : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10",
                         ].join(" ")}
                       >
                         {tr("다음", "次へ")}

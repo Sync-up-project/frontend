@@ -1,32 +1,24 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import { Providers } from "./providers";
-
-import Header from "./components/Header";
-import Footer from "./components/Footer";
-import ChatWidget from "./components/ChatWidget";
+import { Chrome } from "./Chrome";
 
 export const metadata: Metadata = {
   title: "Sync Up",
   description: "프로젝트 협업 플랫폼",
+  icons: {
+    icon: "/assets/logo/syncup-icon.png",
+    shortcut: "/assets/logo/syncup-icon.png",
+    apple: "/assets/logo/syncup-icon.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ko" className="light">
-      <body className="min-h-screen text-gray-900 antialiased">
+    <html lang="ko" suppressHydrationWarning>
+      <body className="min-h-screen antialiased bg-white text-gray-900 dark:bg-slate-950 dark:text-gray-100">
         <Providers>
-          <div className="min-h-screen flex flex-col">
-            <div className="sticky top-0 z-50 bg-white border-b border-gray-200">
-              <Header />
-            </div>
-
-            <main className="flex-1">{children}</main>
-            <Footer />
-
-            {/* ✅ 전역 채팅 위젯 */}
-            <ChatWidget />
-          </div>
+          <Chrome>{children}</Chrome>
         </Providers>
       </body>
     </html>

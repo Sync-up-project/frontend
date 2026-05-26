@@ -94,8 +94,8 @@ function SelectRow({
       onClick={onClick}
       className={`w-full rounded-xl px-4 py-3 text-left text-sm font-semibold transition ${
         active
-          ? "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200"
-          : "bg-white text-gray-800 hover:bg-gray-50 ring-1 ring-gray-200"
+          ? "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-white/10 dark:text-white dark:ring-white/15"
+          : "bg-white text-gray-800 hover:bg-gray-50 ring-1 ring-gray-200 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10 dark:ring-white/10"
       }`}
     >
       {label}
@@ -118,8 +118,8 @@ function TogglePill({
       onClick={onClick}
       className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
         active
-          ? "bg-indigo-600 text-white shadow-sm"
-          : "bg-gray-100 text-gray-800 hover:bg-gray-200"
+          ? "bg-indigo-600 text-white shadow-sm dark:bg-white dark:text-slate-950"
+          : "bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/15"
       }`}
     >
       {label}
@@ -141,17 +141,17 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white">
+    <div className="rounded-2xl border border-gray-200 bg-white dark:bg-white/5 dark:border-white/10">
       <button
         type="button"
         onClick={onToggle}
         className="flex w-full items-center justify-between gap-4 px-5 py-4"
       >
         <div className="min-w-0">
-          <p className="text-sm font-extrabold text-gray-900">{title}</p>
-          <p className="mt-1 text-xs font-medium text-gray-500">{subtitle}</p>
+          <p className="text-sm font-extrabold text-gray-900 dark:text-white">{title}</p>
+          <p className="mt-1 text-xs font-medium text-gray-500 dark:text-white/60">{subtitle}</p>
         </div>
-        <span className="text-gray-500">
+        <span className="text-gray-500 dark:text-white/60">
           <Chevron open={open} />
         </span>
       </button>
@@ -276,9 +276,9 @@ export default function ProjectFilters({ value, onChange }: Props) {
 
   return (
     <div className="space-y-3">
-      <aside className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <aside className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:bg-white/5 dark:border-white/10">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-extrabold text-gray-900">
+          <h2 className="text-xl font-extrabold text-gray-900 dark:text-white">
             {tr("필터", "フィルター")}
           </h2>
         </div>
@@ -290,7 +290,7 @@ export default function ProjectFilters({ value, onChange }: Props) {
             ))}
           </div>
         ) : (
-          <p className="mt-4 text-xs font-medium text-gray-500">
+          <p className="mt-4 text-xs font-medium text-gray-500 dark:text-white/60">
             {tr("선택된 필터가 없습니다.", "選択されたフィルターはありません。")}
           </p>
         )}
@@ -355,7 +355,7 @@ export default function ProjectFilters({ value, onChange }: Props) {
       <button
         type="button"
         onClick={resetAll}
-        className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50"
+        className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10"
       >
         {tr("초기화", "リセット")}
       </button>

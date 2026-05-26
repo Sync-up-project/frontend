@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import ThemeToggle from "@/components/theme-toggle";
 import DraftViewer from "@/components/draft/DraftViewer";
 import KanbanBoardDndView from "@/components/kanban/KanbanBoardDndView";
+import ProjectSchedule from "@/components/schedule/ProjectSchedule";
 import { fetchCurrentUser, getAccessToken, getCurrentUser } from "@/lib/auth";
 import {
   apiGetProjectMeParticipation,
@@ -172,7 +173,9 @@ export default function ProjectDetailPage({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  const [tab, setTab] = useState<"overview" | "board" | "artifact" | "raw">(
+  const [tab, setTab] = useState<
+    "overview" | "schedule" | "board" | "artifact" | "raw"
+  >(
     "overview"
   );
 
@@ -427,7 +430,7 @@ export default function ProjectDetailPage({
       if (tab === "raw" || tab === "board") setTab("overview");
       return;
     }
-    if (tab === "artifact" || tab === "raw") setTab("overview");
+    if (tab === "artifact" || tab === "raw" || tab === "schedule") setTab("overview");
   }, [isOwner, isMember, tab]);
 
   const reloadParticipation = useCallback(async () => {
@@ -463,7 +466,7 @@ export default function ProjectDetailPage({
 
   const latestArtifactId = latestArtifact?.meta?.id ?? null;
   const ownerTabs = useMemo(
-    () => ["overview", "board", "artifact", "raw"] as const,
+    () => ["overview", "schedule", "board", "artifact", "raw"] as const,
     []
   );
 
@@ -649,7 +652,7 @@ export default function ProjectDetailPage({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-transparent">
       <div className="mx-auto max-w-screen-2xl px-8 py-10">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -817,6 +820,8 @@ export default function ProjectDetailPage({
               >
                 {t === "overview"
                   ? "개요"
+                  : t === "schedule"
+                  ? "일정"
                   : t === "board"
                   ? "보드"
                   : t === "artifact"
@@ -839,6 +844,18 @@ export default function ProjectDetailPage({
                 }`}
             >
               프로젝트
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab("schedule")}
+              className={`rounded-xl border px-4 py-2 text-sm font-semibold transition-colors
+                ${
+                  tab === "schedule"
+                    ? "border-gray-900 bg-gray-900 text-white"
+                    : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                }`}
+            >
+              일정
             </button>
             <button
               type="button"
@@ -1008,6 +1025,13 @@ export default function ProjectDetailPage({
                 <DraftViewer contentJson={latestArtifact.contentJson} />
               </>
             )}
+          </div>
+        )}
+
+        {/* Schedule tab (오너/멤버) */}
+        {!loading && data && (isOwner || isMember) && tab === "schedule" && (
+          <div className="mt-4 grid gap-6">
+            <ProjectSchedule projectId={projectId} />
           </div>
         )}
 

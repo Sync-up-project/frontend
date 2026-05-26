@@ -565,7 +565,7 @@ export default function ProjectManagePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-transparent">
       <div className="mx-auto max-w-screen-2xl px-8 py-10">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>

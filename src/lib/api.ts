@@ -1,6 +1,6 @@
 // src/lib/api.ts
 
-import { getAccessToken, getApiBaseUrl } from "@/lib/auth";
+import { getAccessToken, getApiBaseUrl, refreshAccessToken } from "@/lib/auth";
 
 import type {
   ProjectListResponse,
@@ -15,6 +15,12 @@ import type {
   DeleteProjectManagementRequest,
   PostProjectMailRequest,
 } from "@/lib/types/project";
+
+import type {
+  CreateProjectCalendarEventRequest,
+  GetProjectCalendarEventsResponse,
+  UpdateProjectCalendarEventRequest,
+} from "@/lib/types/schedule";
 
 import type {
   GetMyPageResponse,
@@ -65,6 +71,10 @@ function buildUrl(path: string) {
 }
 
 async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
+  return apiFetchInner<T>(path, options, 0);
+}
+
+async function apiFetchInner<T>(path: string, options: ApiOptions, retryCount: number): Promise<T> {
   const url = buildUrl(path);
   const {
     method = "GET",
@@ -109,6 +119,16 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
   // ✅ 미구현 API는 404를 허용해서 조용히 처리
   if (allow404 && res.status === 404) {
     return undefined as unknown as T;
+  }
+
+  // ✅ accessToken 만료 등 401이면 refresh 시도 후 1회 재시도
+  if (auth && res.status === 401 && retryCount < 1) {
+    try {
+      await refreshAccessToken();
+      return apiFetchInner<T>(path, options, retryCount + 1);
+    } catch {
+      // ignore and fallthrough
+    }
   }
 
   if (!res.ok) {
@@ -303,6 +323,61 @@ export async function apiPatchInvitation(
 
 export async function apiGetProjectSimilar(projectId: string): Promise<ProjectSimilarResponse> {
   return apiFetch<ProjectSimilarResponse>(`/projects/${projectId}/similar`, { allow404: true });
+}
+
+/**
+ * ------------------------------------------------------------
+ * Project Calendar Events APIs
+ * ------------------------------------------------------------
+ */
+
+export async function apiGetProjectCalendarEvents(
+  projectId: string,
+  params?: { from?: string; to?: string },
+): Promise<GetProjectCalendarEventsResponse> {
+  const q = new URLSearchParams();
+  if (params?.from) q.set("from", params.from);
+  if (params?.to) q.set("to", params.to);
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  return apiFetch<GetProjectCalendarEventsResponse>(
+    `/projects/${encodeURIComponent(projectId)}/calendar-events${suffix}`,
+    { auth: true },
+  );
+}
+
+export async function apiCreateProjectCalendarEvent(
+  projectId: string,
+  payload: CreateProjectCalendarEventRequest,
+): Promise<any> {
+  return apiFetch<any>(`/projects/${encodeURIComponent(projectId)}/calendar-events`, {
+    method: "POST",
+    auth: true,
+    body: payload,
+  });
+}
+
+export async function apiUpdateProjectCalendarEvent(
+  projectId: string,
+  eventId: string,
+  payload: UpdateProjectCalendarEventRequest,
+): Promise<any> {
+  return apiFetch<any>(
+    `/projects/${encodeURIComponent(projectId)}/calendar-events/${encodeURIComponent(eventId)}`,
+    { method: "PATCH", auth: true, body: payload },
+  );
+}
+
+export async function apiDeleteProjectCalendarEvent(projectId: string, eventId: string): Promise<any> {
+  return apiFetch<any>(
+    `/projects/${encodeURIComponent(projectId)}/calendar-events/${encodeURIComponent(eventId)}`,
+    { method: "DELETE", auth: true },
+  );
+}
+
+export async function apiGetProjectCalendarEventsSummary(
+  projectId: string,
+): Promise<any> {
+  return apiFetch<any>(`/projects/${encodeURIComponent(projectId)}/calendar-events/summary`, { auth: true });
 }
 
 export async function apiPatchProjectStatus(

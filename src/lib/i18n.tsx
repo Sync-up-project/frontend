@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { jaMap } from "@/lib/i18n_ja";
 
 export type Lang = "KR" | "JP";
 
@@ -10,6 +11,7 @@ type I18nContextValue = {
   lang: Lang;
   setLang: (next: Lang) => void;
   tr: (kr: string, jp: string) => string;
+  t: (krText: string) => string;
 };
 
 const I18nContext = createContext<I18nContextValue | null>(null);
@@ -48,10 +50,16 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   }, [lang, hydrated]);
 
   const value = useMemo<I18nContextValue>(() => {
+    const t = (krText: string) => {
+      if (lang !== "JP") return krText;
+      return jaMap[krText] ?? krText;
+    };
+
     return {
       lang,
       setLang: (next) => setLangState(next),
       tr: (kr, jp) => (lang === "JP" ? jp : kr),
+      t,
     };
   }, [lang]);
 

@@ -1,9 +1,10 @@
 "use client";
 
-import { Globe } from "lucide-react";
+import { Globe, Moon, Sun } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 
 import { clearAccessToken, getAccessToken, getCurrentUser } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
@@ -13,10 +14,15 @@ function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
 
+function headerButtonBase() {
+  return "inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-sm font-semibold transition-colors";
+}
+
 export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const { lang, setLang, tr } = useI18n();
+  const { theme, setTheme } = useTheme();
 
   const [isAuthed, setIsAuthed] = useState(false);
   const [displayName, setDisplayName] = useState<string | null>(null);
@@ -81,15 +87,24 @@ export default function Header() {
   }
 
   return (
-    <header className="w-full border-b bg-white">
+    <header className="w-full border-b bg-white dark:bg-slate-950 dark:border-white/10">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
         {/* Left */}
         <div className="flex items-center gap-8">
           <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600 text-white">
-              +
-            </div>
-            <span className="text-lg font-bold">Sync Up</span>
+            {/* Small screens + dark mode: icon, Light mode md+: horizontal lockup */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/assets/logo/syncup-icon.png"
+              alt="SyncUp logo"
+              className="h-8 w-8 object-contain md:hidden dark:md:block"
+            />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/assets/logo/syncup-logo-horizontal.png"
+              alt="SyncUp logo"
+              className="hidden h-7 w-auto object-contain md:block dark:md:hidden"
+            />
           </Link>
 
           <nav className="hidden items-center gap-6 md:flex">
@@ -101,8 +116,8 @@ export default function Header() {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "text-sm text-zinc-600 hover:text-zinc-900",
-                    active && "font-semibold text-zinc-900"
+                    "text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white",
+                    active && "font-semibold text-zinc-900 dark:text-white"
                   )}
                 >
                   {item.label}
@@ -116,14 +131,29 @@ export default function Header() {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
-            onClick={() => setLang(lang === "ko" ? "ja" : "ko")}
+            className={cn(
+              headerButtonBase(),
+              "border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-50",
+              "dark:border-white/10 dark:bg-white/5 dark:text-zinc-100 dark:hover:bg-white/10"
+            )}
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            aria-label="theme"
+          >
+            {theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+            <span className="text-xs">{theme === "dark" ? "Dark" : "Light"}</span>
+          </button>
+          <button
+            type="button"
+            className={cn(
+              headerButtonBase(),
+              "border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-50",
+              "dark:border-white/10 dark:bg-white/5 dark:text-zinc-100 dark:hover:bg-white/10"
+            )}
+            onClick={() => setLang(lang === "KR" ? "JP" : "KR")}
             aria-label="language"
           >
             <Globe className="h-4 w-4" />
-            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs">
-              {lang === "ko" ? "KO" : "JA"}
-            </span>
+            <span className="text-xs">{lang === "KR" ? "KO" : "JA"}</span>
           </button>
 
           {isAuthed ? (
@@ -145,7 +175,10 @@ export default function Header() {
               <button
                 type="button"
                 onClick={onLogout}
-                className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                className={cn(
+                  "inline-flex h-9 items-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white transition hover:bg-zinc-800",
+                  "dark:bg-white dark:text-slate-950 dark:hover:bg-white/90"
+                )}
               >
                 {tr("로그아웃", "ログアウト")}
               </button>
@@ -153,7 +186,10 @@ export default function Header() {
           ) : (
             <Link
               href="/login"
-              className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              className={cn(
+                "inline-flex h-9 items-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white transition hover:bg-zinc-800",
+                "dark:bg-white dark:text-slate-950 dark:hover:bg-white/90"
+              )}
             >
               {tr("로그인", "ログイン")}
             </Link>

@@ -69,7 +69,7 @@ export default function CreatePostClient() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white dark:bg-transparent">
       <div className="mx-auto w-full max-w-[960px] px-6 lg:px-10 py-6">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>

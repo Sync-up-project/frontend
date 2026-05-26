@@ -139,7 +139,7 @@ export default function NoticeDetailClient() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white dark:bg-transparent">
       <div className="mx-auto w-full max-w-[980px] px-6 lg:px-10 py-6">
         <div className="mb-4 flex items-center justify-between">
           {/* ✅ 항상 목록으로 이동하도록 고정 */}

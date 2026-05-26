@@ -57,8 +57,8 @@ export default function ProjectList({ projects }: Props) {
   const list = Array.isArray(projects) ? projects : [];
 
   return (
-    <section className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-      <div className="hidden md:grid grid-cols-12 gap-3 px-5 py-3 border-b border-gray-100 text-[11px] font-semibold text-gray-500">
+    <section className="bg-white border border-gray-200 rounded-2xl overflow-hidden dark:bg-white/5 dark:border-white/10">
+      <div className="hidden md:grid grid-cols-12 gap-3 px-5 py-3 border-b border-gray-100 text-[11px] font-semibold text-gray-500 dark:border-white/10 dark:text-white/60">
         <div className="col-span-5">{tr("프로젝트", "プロジェクト")}</div>
         <div className="col-span-2">{tr("모집유형", "募集タイプ")}</div>
         <div className="col-span-4">{tr("개발언어 및 툴", "開発言語・ツール")}</div>
@@ -66,21 +66,21 @@ export default function ProjectList({ projects }: Props) {
       </div>
 
       {list.length === 0 ? (
-        <div className="p-6 text-sm text-gray-600">
+        <div className="p-6 text-sm text-gray-600 dark:text-white/70">
           {tr("표시할 프로젝트가 없습니다.", "表示できるプロジェクトがありません。")}
         </div>
       ) : (
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-gray-100 dark:divide-white/10">
           {list.map((p) => (
             <Link
               key={p.id}
               href={`/projects/${p.id}`}
-              className="block px-5 py-4 hover:bg-gray-50 transition"
+              className="block px-5 py-4 hover:bg-gray-50 transition dark:hover:bg-white/5"
             >
               <div className="grid grid-cols-12 gap-3 items-center">
                 <div className="col-span-12 md:col-span-5">
-                  <p className="font-semibold text-gray-900">{p.title}</p>
-                  <p className="text-xs text-gray-600 mt-1 line-clamp-1">{p.description}</p>
+                  <p className="font-semibold text-gray-900 dark:text-white">{p.title}</p>
+                  <p className="text-xs text-gray-600 dark:text-white/70 mt-1 line-clamp-1">{p.description}</p>
                 </div>
 
                 <div className="col-span-6 md:col-span-2">
@@ -92,18 +92,18 @@ export default function ProjectList({ projects }: Props) {
                     {(p.tags ?? []).slice(0, 3).map((t) => (
                       <span
                         key={t}
-                        className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700"
+                        className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-white/75"
                       >
                         {t}
                       </span>
                     ))}
                     {(p.tags ?? []).length > 3 ? (
-                      <span className="text-xs text-gray-500">+{(p.tags ?? []).length - 3}</span>
+                      <span className="text-xs text-gray-500 dark:text-white/60">+{(p.tags ?? []).length - 3}</span>
                     ) : null}
                   </div>
                 </div>
 
-                <div className="col-span-12 md:col-span-1 text-right text-xs text-gray-700">
+                <div className="col-span-12 md:col-span-1 text-right text-xs text-gray-700 dark:text-white/75">
                   {p.currentCount}/{p.totalCount}
                   {tr("명", "名")}
                 </div>

@@ -47,10 +47,11 @@ const TOKEN_KEY = "syncup_access_token";
 const SESSION_USER_KEY = "syncup_session_user";
 const ACTIVE_PROJECT_KEY = "syncup_active_project_id";
 
-const DEV_AUTH_ENABLED = process.env.NEXT_PUBLIC_ENABLE_DEV_AUTH === "true";
-
 export function getApiBaseUrl(): string {
-  const env = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const env =
+    process.env.NEXT_PUBLIC_API_BASE_URL ??
+    process.env.NEXT_PUBLIC_API_URL ??
+    process.env.NEXT_PUBLIC_BACKEND_URL;
   const base = env ?? "http://localhost:3001";
   return base;
 }
@@ -114,7 +115,10 @@ export function isLoggedIn(): boolean {
 }
 
 async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const res = await fetch(input, init);
+  const res = await fetch(input, {
+    credentials: "include",
+    ...init,
+  });
 
   const contentType = res.headers.get("content-type") ?? "";
   const isJson = contentType.includes("application/json");
@@ -144,7 +148,6 @@ export async function fetchCurrentUser(): Promise<SessionUser> {
       Accept: "application/json",
     },
     cache: "no-store",
-    credentials: "include",
   });
 
   // { user: {...} } or {...}
@@ -183,6 +186,21 @@ export async function fetchCurrentUser(): Promise<SessionUser> {
 
   saveCurrentUser(normalized);
   return normalized;
+}
+
+export async function refreshAccessToken(): Promise<{ accessToken: string; expiresIn?: number }> {
+  const url = `${getApiBaseUrl()}/auth/refresh`;
+
+  const data = await fetchJson<any>(url, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+
+  const token = typeof data?.accessToken === "string" ? data.accessToken : "";
+  if (!token) throw new Error("refresh failed");
+  saveAccessToken(token);
+  return { accessToken: token, expiresIn: data?.expiresIn };
 }
 
 async function syncActiveProjectForCurrentUser(): Promise<void> {
@@ -304,28 +322,6 @@ export async function authedGet<T>(path: string): Promise<T> {
     cache: "no-store",
     credentials: "include",
   });
-}
-
-function makeDevToken(email: string): string {
-  return `dev.${btoa(unescape(encodeURIComponent(email)))}.${Date.now()}`;
-}
-
-/**
- * ✅ 개발 시연용: 강제로 로그인 상태 만들기
- * - NEXT_PUBLIC_ENABLE_DEV_AUTH=true 일 때만 동작
- */
-export function devLogin(): void {
-  if (!DEV_AUTH_ENABLED) {
-    throw new Error("DEV_AUTH가 비활성화되어 있습니다. (NEXT_PUBLIC_ENABLE_DEV_AUTH=true 필요)");
-  }
-
-  const email = process.env.NEXT_PUBLIC_DEV_USER_EMAIL ?? "dev@example.com";
-  const nickname = process.env.NEXT_PUBLIC_DEV_USER_NICKNAME ?? "dev";
-  const id = process.env.NEXT_PUBLIC_DEV_USER_ID ?? "dev-user";
-
-  const token = makeDevToken(email);
-  saveAccessToken(token);
-  saveCurrentUser({ id, nickname, email });
 }
 
 export async function sendEmailVerification(payload: { email: string }): Promise<{ message: string }> {

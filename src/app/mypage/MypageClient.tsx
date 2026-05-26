@@ -287,20 +287,20 @@ export default function MypageClient() {
       : "#";
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-transparent">
       <div className="max-w-6xl mx-auto px-6 py-3">
         <div className="mt-2">
-          <h1 className="text-xl font-extrabold text-gray-900">{tr("마이페이지", "マイページ")}</h1>
+          <h1 className="text-xl font-extrabold text-gray-900 dark:text-white">{tr("마이페이지", "マイページ")}</h1>
         </div>
 
         {errorMsg ? (
-          <div className="mt-3 rounded-2xl border border-red-200 bg-white p-4 text-sm text-red-700 shadow-sm">
+          <div className="mt-3 rounded-2xl border border-red-200 bg-white p-4 text-sm text-red-700 shadow-sm dark:bg-white/5 dark:border-red-500/30 dark:text-red-200">
             {tr("마이페이지 데이터를 불러오지 못했습니다.", "読み込みに失敗しました。")}
-            <div className="mt-1 text-xs text-red-600 break-words">{errorMsg}</div>
+            <div className="mt-1 text-xs text-red-600 dark:text-red-200/80 break-words">{errorMsg}</div>
           </div>
         ) : null}
 
-        <div className="mt-3 rounded-3xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="mt-3 rounded-3xl border border-gray-200 bg-white p-4 shadow-sm dark:bg-white/5 dark:border-white/10">
           <div className="flex items-start justify-between gap-5">
             <div className="flex items-center gap-3.5">
               <div className="h-10 w-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-extrabold text-sm">
@@ -308,10 +308,10 @@ export default function MypageClient() {
               </div>
 
               <div>
-                <div className="text-sm md:text-base font-extrabold text-gray-900">
+                <div className="text-sm md:text-base font-extrabold text-gray-900 dark:text-white">
                   {tr("프로필 정보", "プロフィール")}
                 </div>
-                <div className="mt-1 text-xs text-gray-500">
+                <div className="mt-1 text-xs text-gray-500 dark:text-white/60">
                   {loading
                     ? tr("불러오는 중...", "読み込み中...")
                     : tr("계정 정보를 확인하고 수정할 수 있습니다.", "アカウント情報を確認・編集できます。")}
@@ -328,36 +328,36 @@ export default function MypageClient() {
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-2.5 md:grid-cols-4">
-            <div className="rounded-2xl bg-gray-50 p-3">
-              <div className="text-[11px] font-bold text-gray-500">{tr("닉네임", "ニックネーム")}</div>
-              <div className="mt-1.5 text-sm font-extrabold text-gray-900 break-words">{nickname}</div>
+            <div className="rounded-2xl bg-gray-50 p-3 dark:bg-white/5">
+              <div className="text-[11px] font-bold text-gray-500 dark:text-white/60">{tr("닉네임", "ニックネーム")}</div>
+              <div className="mt-1.5 text-sm font-extrabold text-gray-900 dark:text-white break-words">{nickname}</div>
             </div>
 
-            <div className="rounded-2xl bg-gray-50 p-3">
-              <div className="text-[11px] font-bold text-gray-500">{tr("이메일", "メール")}</div>
-              <div className="mt-1.5 text-sm font-extrabold text-gray-900 break-words">{email}</div>
+            <div className="rounded-2xl bg-gray-50 p-3 dark:bg-white/5">
+              <div className="text-[11px] font-bold text-gray-500 dark:text-white/60">{tr("이메일", "メール")}</div>
+              <div className="mt-1.5 text-sm font-extrabold text-gray-900 dark:text-white break-words">{email}</div>
             </div>
 
-            <div className="rounded-2xl bg-gray-50 p-3">
-              <div className="text-[11px] font-bold text-gray-500">{tr("역할", "役割")}</div>
-              <div className="mt-1.5 text-sm font-extrabold text-gray-900">{role}</div>
+            <div className="rounded-2xl bg-gray-50 p-3 dark:bg-white/5">
+              <div className="text-[11px] font-bold text-gray-500 dark:text-white/60">{tr("역할", "役割")}</div>
+              <div className="mt-1.5 text-sm font-extrabold text-gray-900 dark:text-white">{role}</div>
             </div>
 
-            <div className="rounded-2xl bg-gray-50 p-3">
-              <div className="text-[11px] font-bold text-gray-500">{tr("국가", "国")}</div>
-              <div className="mt-1.5 text-sm font-extrabold text-gray-900">{country}</div>
+            <div className="rounded-2xl bg-gray-50 p-3 dark:bg-white/5">
+              <div className="text-[11px] font-bold text-gray-500 dark:text-white/60">{tr("국가", "国")}</div>
+              <div className="mt-1.5 text-sm font-extrabold text-gray-900 dark:text-white">{country}</div>
             </div>
 
-            <div className="rounded-2xl bg-gray-50 p-3 md:col-span-2">
-              <div className="text-[11px] font-bold text-gray-500">{tr("가입일", "登録日")}</div>
-              <div className="mt-1.5 text-sm font-extrabold text-gray-900">{joined}</div>
+            <div className="rounded-2xl bg-gray-50 p-3 md:col-span-2 dark:bg-white/5">
+              <div className="text-[11px] font-bold text-gray-500 dark:text-white/60">{tr("가입일", "登録日")}</div>
+              <div className="mt-1.5 text-sm font-extrabold text-gray-900 dark:text-white">{joined}</div>
             </div>
           </div>
 
-          <div className="mt-4 rounded-2xl bg-gray-50 p-3.5">
+          <div className="mt-4 rounded-2xl bg-gray-50 p-3.5 dark:bg-white/5">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
-                <div className="text-sm font-extrabold text-gray-900">{tr("GitHub 연동", "GitHub 連携")}</div>
+                <div className="text-sm font-extrabold text-gray-900 dark:text-white">{tr("GitHub 연동", "GitHub 連携")}</div>
                 <div className="mt-1 text-[11px] text-gray-500">
                   {ghConnected
                     ? tr("GitHub 계정이 연동되어 있습니다.", "GitHub アカウントが連携されています。")

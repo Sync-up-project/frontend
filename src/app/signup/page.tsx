@@ -16,9 +16,6 @@ export default function Signup() {
   const router = useRouter();
   const { tr } = useI18n();
 
-  // ✅ role은 UI에 남겨두되, 백엔드 signup 스펙에 없어서 제출 조건에 포함하지 않음
-  const [selectedRole, setSelectedRole] = useState<string>("");
-
   const [nickname, setNickname] = useState<string>("");
   const [nicknameChecked, setNicknameChecked] = useState<"idle" | "ok" | "fail">("idle");
   const [nicknameMsg, setNicknameMsg] = useState<string>("");
@@ -86,193 +83,156 @@ export default function Signup() {
       router.push("/projects");
     } catch (err) {
       setError(err instanceof Error ? err.message : tr("회원가입에 실패했습니다.", "会員登録に失敗しました。"));
-    } finally {
+  } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <div className="min-h-screen pt-20 bg-gradient-to-b from-gray-50 via-white to-gray-100 relative overflow-hidden">
-      <div className="absolute inset-0 opacity-20">
-        <div className="absolute top-20 left-20 w-32 h-32 bg-gray-300 rounded-full blur-3xl" />
-        <div className="absolute bottom-40 right-40 w-40 h-40 bg-gray-300 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 left-1/3 w-24 h-24 bg-gray-300 rounded-full blur-2xl" />
-      </div>
+    <div className="min-h-screen flex items-center justify-center px-4 py-10 bg-gradient-to-b from-gray-50 via-white to-gray-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+      <div className="w-full max-w-md">
+        <div className="flex flex-col items-center text-center mb-8">
+          <Link
+            href="/"
+            aria-label="Go to home"
+            className="rounded-2xl bg-black/5 p-3 ring-1 ring-black/10 shadow-xl shadow-black/10 transition hover:shadow-black/20 focus:outline-none focus:ring-2 focus:ring-sky-500/40 dark:bg-white/5 dark:ring-white/10 dark:shadow-black/30 dark:hover:shadow-black/40"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/assets/logo/syncup-icon.png"
+              alt="SyncUp logo"
+              className="h-14 w-14 object-contain rounded-xl"
+            />
+          </Link>
+          <h1 className="mt-6 text-xl font-bold text-gray-900 dark:text-white">{tr("회원가입", "会員登録")}</h1>
+        </div>
 
-      <div className="relative z-10 flex items-start justify-center min-h-[calc(100vh-64px)] px-6 lg:px-10 py-8">
-        <div className="max-w-7xl w-full grid md:grid-cols-[minmax(0,1fr)_520px] gap-10 items-center">
-          <div className="text-left">
-            <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6 leading-tight">
-              {tr("프로젝트가 시작되는 곳", "プロジェクトが始まる場所")}
-              <br />
-              <span className="text-gray-900">Sync Up</span>
-            </h1>
-
-            <p className="text-gray-700 leading-relaxed max-w-md">
-              {tr(
-                "이메일 인증 없이 간단하게 회원가입을 진행합니다. (추후 이메일 인증을 다시 추가할 수 있습니다.)",
-                "メール認証なしで簡単に会員登録を進めます。（後でメール認証を追加できます。）"
-              )}
-            </p>
-          </div>
-
-          <div className="bg-white rounded-3xl shadow-2xl p-8 md:p-10 w-full md:w-[520px] md:min-w-[520px] md:max-w-[520px] justify-self-end border border-gray-200">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">
-              {tr("Sync Up 회원가입", "Sync Up 会員登録")}
-            </h2>
-
-            <form className="space-y-4" onSubmit={onSubmit}>
-              {/* Role (UI만 유지) */}
-              <div>
-                <label className="block text-sm font-medium text-gray-800 mb-2">
-                  {tr("역할 선택(선택)", "役割選択（任意）")}
-                </label>
-                <div className="flex gap-2">
-                  {[
-                    { key: "DEV", label: tr("개발", "開発") },
-                    { key: "DESIGN", label: tr("디자인", "デザイン") },
-                    { key: "PM", label: tr("기획", "企画") },
-                  ].map((r) => (
-                    <button
-                      key={r.key}
-                      type="button"
-                      onClick={() => setSelectedRole(r.key)}
-                      className={[
-                        "px-3 py-2 rounded-lg border text-sm font-medium transition-colors",
-                        selectedRole === r.key
-                          ? "border-gray-900 bg-gray-900 text-white"
-                          : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50",
-                      ].join(" ")}
-                    >
-                      {r.label}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-2 text-xs text-gray-500">
-                  {tr(
-                    "현재 회원가입 API에 role이 포함되어 있지 않아 저장되지 않습니다.",
-                    "現在の会員登録APIにroleが含まれていないため保存されません。"
-                  )}
-                </p>
-              </div>
-
-              {/* Nickname */}
-              <div>
-                <label className="block text-sm font-medium text-gray-800 mb-2">
-                  {tr("닉네임", "ニックネーム")}
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={nickname}
-                    onChange={(e) => {
-                      setNickname(e.target.value);
-                      setNicknameChecked("idle");
-                      setNicknameMsg("");
-                    }}
-                    placeholder={tr("닉네임을 입력해 주세요", "ニックネームを入力してください")}
-                    className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-300"
-                  />
-                  <button
-                    type="button"
-                    onClick={onCheckNickname}
-                    className="px-4 py-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-sm font-medium"
-                  >
-                    {tr("중복확인", "重複確認")}
-                  </button>
-                </div>
-
-                {nicknameMsg ? (
-                  <p
-                    className={[
-                      "mt-2 text-sm",
-                      nicknameChecked === "ok" ? "text-emerald-700" : "text-red-700",
-                    ].join(" ")}
-                  >
-                    {nicknameMsg}
-                  </p>
-                ) : null}
-              </div>
-
-              {/* Email (이메일 인증 제거: 입력만 받음) */}
-              <div>
-                <label className="block text-sm font-medium text-gray-800 mb-2">
-                  {tr("이메일", "メール")}
-                </label>
+        <div className="rounded-2xl bg-white border border-gray-200 p-6 shadow-2xl dark:bg-black/20 dark:backdrop-blur dark:border-white/10">
+          <form className="space-y-4" onSubmit={onSubmit}>
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-2 dark:text-white/90">
+                {tr("닉네임", "ニックネーム")}
+              </label>
+              <div className="flex gap-2">
                 <input
                   type="text"
-                  value={email}
+                  value={nickname}
                   onChange={(e) => {
-                    setEmail(e.target.value);
+                    setNickname(e.target.value);
+                    setNicknameChecked("idle");
+                    setNicknameMsg("");
                   }}
-                  placeholder={tr("이메일을 입력해 주세요", "メールアドレスを入力してください")}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-300"
+                    placeholder={tr("닉네임을 입력해 주세요", "ニックネームを入力してください")}
+                  className="flex-1 h-11 px-4 rounded-lg bg-gray-50 text-gray-900 placeholder:text-gray-400 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-sky-500/30 dark:bg-black/30 dark:text-white dark:placeholder:text-white/40 dark:border-white/10 dark:focus:ring-sky-500/50"
+                  disabled={submitting}
                 />
-                {!email.trim() ? null : isValidEmail(email.trim()) ? (
-                  <p className="mt-2 text-sm text-emerald-700">
-                    {tr("사용 가능한 이메일 형식입니다.", "使用可能なメール形式です。")}
-                  </p>
-                ) : (
-                  <p className="mt-2 text-sm text-red-700">
-                    {tr("이메일 형식을 확인해 주세요.", "メールアドレスの形式をご確認ください。")}
-                  </p>
-                )}
+                <button
+                  type="button"
+                  onClick={onCheckNickname}
+                  disabled={submitting}
+                  className={[
+                    "h-11 px-4 rounded-lg border text-sm font-semibold transition-colors",
+                    "border-gray-200 bg-gray-900 text-white hover:bg-gray-800",
+                    "dark:border-white/10 dark:bg-black/30 dark:text-white dark:hover:bg-black/40",
+                    submitting ? "opacity-60 cursor-not-allowed" : "",
+                  ].join(" ")}
+                >
+                  {tr("중복확인", "重複確認")}
+                </button>
               </div>
 
-              {/* Password */}
-              <div>
-                <label className="block text-sm font-medium text-gray-800 mb-2">
-                  {tr("비밀번호", "パスワード")}
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={tr("비밀번호를 입력해 주세요 (8자 이상)", "パスワードを入力してください（8文字以上）")}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-300"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-800 mb-2">
-                  {tr("비밀번호 확인", "パスワード確認")}
-                </label>
-                <input
-                  type="password"
-                  value={passwordConfirm}
-                  onChange={(e) => setPasswordConfirm(e.target.value)}
-                  placeholder={tr("비밀번호를 다시 입력해 주세요", "パスワードをもう一度入力してください")}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-300"
-                />
-              </div>
-
-              {error ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {error}
-                </div>
+              {nicknameMsg ? (
+                <p
+                  className={[
+                    "mt-2 text-sm",
+                    nicknameChecked === "ok" ? "text-emerald-200" : "text-red-200",
+                  ].join(" ")}
+                >
+                  {nicknameMsg}
+                </p>
               ) : null}
+            </div>
 
-              <button
-                type="submit"
-                disabled={!canSubmit || submitting}
-                className={[
-                  "w-full py-3 rounded-lg transition-colors font-medium",
-                  !canSubmit || submitting
-                    ? "bg-gray-500 text-white cursor-not-allowed"
-                    : "bg-gray-900 text-white hover:bg-gray-800",
-                ].join(" ")}
-              >
-                {submitting ? tr("처리 중...", "処理中...") : tr("회원가입", "会員登録")}
-              </button>
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-2 dark:text-white/90">
+                {tr("이메일", "メール")}
+              </label>
+              <input
+                type="text"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={tr("이메일을 입력해 주세요", "メールアドレスを入力してください")}
+                className="w-full h-11 px-4 rounded-lg bg-gray-50 text-gray-900 placeholder:text-gray-400 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-sky-500/30 dark:bg-black/30 dark:text-white dark:placeholder:text-white/40 dark:border-white/10 dark:focus:ring-sky-500/50"
+                disabled={submitting}
+                autoComplete="email"
+              />
+              {!email.trim() ? null : isValidEmail(email.trim()) ? (
+                <p className="mt-2 text-sm text-emerald-200">
+                  {tr("사용 가능한 이메일 형식입니다.", "使用可能なメール形式です。")}
+                </p>
+              ) : (
+                <p className="mt-2 text-sm text-red-200">
+                  {tr("이메일 형식을 확인해 주세요.", "メールアドレスの形式をご確認ください。")}
+                </p>
+              )}
+            </div>
 
-              <Link
-                href="/login"
-                className="block w-full py-3 bg-white text-gray-900 rounded-lg border-2 border-gray-300 hover:bg-gray-50 transition-colors text-center font-medium"
-              >
-                {tr("이미 계정이 있어요", "すでにアカウントがあります")}
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-2 dark:text-white/90">
+                {tr("비밀번호", "パスワード")}
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={tr("비밀번호를 입력해 주세요 (8자 이상)", "パスワードを入力してください（8文字以上）")}
+                className="w-full h-11 px-4 rounded-lg bg-gray-50 text-gray-900 placeholder:text-gray-400 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-sky-500/30 dark:bg-black/30 dark:text-white dark:placeholder:text-white/40 dark:border-white/10 dark:focus:ring-sky-500/50"
+                disabled={submitting}
+                autoComplete="new-password"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-2 dark:text-white/90">
+                {tr("비밀번호 확인", "パスワード確認")}
+              </label>
+              <input
+                type="password"
+                value={passwordConfirm}
+                onChange={(e) => setPasswordConfirm(e.target.value)}
+                placeholder={tr("비밀번호를 다시 입력해 주세요", "パスワードをもう一度入力してください")}
+                className="w-full h-11 px-4 rounded-lg bg-gray-50 text-gray-900 placeholder:text-gray-400 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-sky-500/30 dark:bg-black/30 dark:text-white dark:placeholder:text-white/40 dark:border-white/10 dark:focus:ring-sky-500/50"
+                disabled={submitting}
+                autoComplete="new-password"
+              />
+            </div>
+
+            {error ? (
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {error}
+              </div>
+            ) : null}
+
+            <button
+              type="submit"
+              disabled={!canSubmit || submitting}
+              className={[
+                "w-full h-11 rounded-lg font-semibold transition-colors",
+                !canSubmit || submitting
+                  ? "bg-slate-600 text-white/80 cursor-not-allowed"
+                  : "bg-sky-500 text-white hover:bg-sky-400",
+              ].join(" ")}
+            >
+              {submitting ? tr("처리 중...", "処理中...") : tr("회원가입", "会員登録")}
+            </button>
+
+            <div className="pt-2 text-center text-sm text-gray-600 dark:text-white/70">
+              {tr("이미 계정이 있어요", "すでにアカウントがあります")}{" "}
+              <Link href="/login" className="text-sky-600 hover:text-sky-700 underline dark:text-sky-300 dark:hover:text-sky-200">
+                {tr("로그인", "ログイン")}
               </Link>
-            </form>
-          </div>
+            </div>
+          </form>
         </div>
       </div>
     </div>

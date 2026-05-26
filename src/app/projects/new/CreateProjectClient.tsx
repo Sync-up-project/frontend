@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useI18n } from "@/lib/i18n";
-import { getAccessToken, getCurrentUser } from "@/lib/auth";
+import { fetchCurrentUser, getAccessToken, getCurrentUser, saveCurrentUser } from "@/lib/auth";
 
 type StackChip = { id: string; label: string };
 type ToolChip = { id: string; label: string };
@@ -68,9 +68,9 @@ function ChipButton({
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+    <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:bg-white/5 dark:border-white/10">
       <div className="mb-4">
-        <p className="text-sm font-extrabold text-gray-900">{title}</p>
+        <p className="text-sm font-extrabold text-gray-900 dark:text-white">{title}</p>
       </div>
       {children}
     </div>
@@ -146,9 +146,6 @@ export default function CreateProjectClient() {
   const [count, setCount] = useState<number>(5);
   const [recruitDeadline, setRecruitDeadline] = useState<string>("");
   const [projectEndDate, setProjectEndDate] = useState<string>("");
-  const [allowComment, setAllowComment] = useState(true);
-  const [allowShare, setAllowShare] = useState(true);
-  const [allowScrap, setAllowScrap] = useState(false);
   const [selectedStacks, setSelectedStacks] = useState<string[]>([]);
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
   const [body, setBody] = useState("");
@@ -210,7 +207,15 @@ export default function CreateProjectClient() {
         return;
       }
 
-      const me = getCurrentUser();
+      let me = getCurrentUser();
+      if (!me?.id) {
+        try {
+          me = await fetchCurrentUser();
+          if (me) saveCurrentUser(me);
+        } catch {
+          // ignore
+        }
+      }
       if (!me?.id) {
         // 토큰은 있지만 유저 캐시가 없을 수도 있으므로: 동일 메시지로 처리
         alert(tr("로그인이 필요한 기능입니다.", "ログインが必要な機能です。"));
@@ -250,7 +255,7 @@ export default function CreateProjectClient() {
         techStacks,
         positionNeeds: mapPositionNeeds(position),
         // 아래 옵션들은 현재 백엔드 스키마에 없을 가능성이 높아서 일단 전송하지 않습니다.
-        // allowComment, allowShare, allowScrap, tools
+        // TODO: 게시 옵션/협업도구를 저장하려면 스키마/백엔드부터 확장하세요.
       };
 
       await postCreateProject(payload);
@@ -266,14 +271,14 @@ export default function CreateProjectClient() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-transparent">
       <div className="max-w-7xl mx-auto px-8 py-10">
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white">
               {tr("프로젝트 글쓰기", "プロジェクト投稿")}
             </h1>
-            <p className="mt-1 text-sm text-gray-600">
+            <p className="mt-1 text-sm text-gray-600 dark:text-white/70">
               {tr(
                 "필수 정보를 입력한 뒤, 본문에서 프로젝트 소개 및 모집글을 자유롭게 작성해 주세요.",
                 "必須情報を入力した後、本文でプロジェクト紹介と募集内容を自由に記入してください。"
@@ -284,14 +289,14 @@ export default function CreateProjectClient() {
           <div className="flex items-center gap-3">
             <Link
               href="/projects"
-              className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+              className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10"
             >
               {tr("취소", "キャンセル")}
             </Link>
             <button
               type="button"
               onClick={onSubmit}
-              className="inline-flex items-center justify-center rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 transition-colors"
+              className="inline-flex items-center justify-center rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 transition-colors dark:bg-white dark:text-slate-950 dark:hover:bg-white/90"
             >
               {tr("등록", "登録")}
             </button>
@@ -299,7 +304,7 @@ export default function CreateProjectClient() {
         </div>
 
         {errorMsg ? (
-          <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
             {errorMsg}
           </div>
         ) : null}
@@ -447,36 +452,7 @@ export default function CreateProjectClient() {
               </div>
             </SectionCard>
 
-            <SectionCard title={tr("게시 옵션", "投稿オプション")}>
-              <div className="space-y-3 text-sm">
-                <label className="flex items-center justify-between gap-3">
-                  <span className="text-gray-800">{tr("댓글 허용", "コメントを許可")}</span>
-                  <input
-                    type="checkbox"
-                    checked={allowComment}
-                    onChange={(e) => setAllowComment(e.target.checked)}
-                  />
-                </label>
-
-                <label className="flex items-center justify-between gap-3">
-                  <span className="text-gray-800">{tr("공유 허용", "共有を許可")}</span>
-                  <input
-                    type="checkbox"
-                    checked={allowShare}
-                    onChange={(e) => setAllowShare(e.target.checked)}
-                  />
-                </label>
-
-                <label className="flex items-center justify-between gap-3">
-                  <span className="text-gray-800">{tr("스크랩 허용", "スクラップを許可")}</span>
-                  <input
-                    type="checkbox"
-                    checked={allowScrap}
-                    onChange={(e) => setAllowScrap(e.target.checked)}
-                  />
-                </label>
-              </div>
-            </SectionCard>
+            {/* 게시 옵션(댓글/공유/스크랩)은 현재 백엔드/스키마에 연결되지 않아 1차 MVP에서는 제거합니다. */}
           </div>
         </div>
       </div>

@@ -40,3 +40,10 @@ a {
 html {
   color-scheme: light;
 }
+
+html.dark {
+  --foreground-rgb: 243, 244, 246;
+  --background-start-rgb: 2, 6, 23;
+  --background-end-rgb: 2, 6, 23;
+  color-scheme: dark;
+}

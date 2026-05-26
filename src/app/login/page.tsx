@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
-import { login, getAccessToken, getCurrentUser } from "@/lib/auth";
+import { login, getAccessToken, fetchCurrentUser, saveAccessToken } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 
 function isValidEmail(email: string): boolean {
@@ -12,7 +12,12 @@ function isValidEmail(email: string): boolean {
 }
 
 function getBackendBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
+  return (
+    process.env.NEXT_PUBLIC_BACKEND_URL ??
+    process.env.NEXT_PUBLIC_API_BASE_URL ??
+    process.env.NEXT_PUBLIC_API_URL ??
+    "http://localhost:3001"
+  );
 }
 
 function GithubIcon({ className }: { className?: string }) {
@@ -35,6 +40,7 @@ export default function LoginPage() {
 
   const next = searchParams.get("next") || "/projects";
   const oauth = searchParams.get("oauth"); // success | failed | null
+  const oauthAccessToken = searchParams.get("accessToken");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -71,7 +77,12 @@ export default function LoginPage() {
         setOauthChecking(true);
         setError("");
         try {
-          const me = await getCurrentUser();
+          if (oauthAccessToken) {
+            saveAccessToken(oauthAccessToken);
+          }
+
+          // OAuth 콜백은 accessToken을 query로 넘기고, 여기서 /auth/me로 세션을 확정합니다.
+          const me = await fetchCurrentUser();
           if (!mounted) return;
 
           if (me) {
@@ -105,7 +116,7 @@ export default function LoginPage() {
     return () => {
       mounted = false;
     };
-  }, [oauth, next, router, tr]);
+  }, [oauth, oauthAccessToken, next, router, tr]);
 
   const canSubmit = useMemo(() => {
     if (!isValidEmail(email.trim())) return false;
@@ -159,119 +170,107 @@ export default function LoginPage() {
   const isBusy = submitting || oauthChecking;
 
   return (
-    <div className="min-h-screen pt-20 bg-gradient-to-b from-gray-50 via-white to-gray-100 relative overflow-hidden">
-      <div className="absolute inset-0 opacity-20">
-        <div className="absolute top-20 left-20 w-32 h-32 bg-gray-300 rounded-full blur-3xl" />
-        <div className="absolute bottom-40 right-40 w-40 h-40 bg-gray-300 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 left-1/3 w-24 h-24 bg-gray-300 rounded-full blur-2xl" />
-      </div>
+    <div className="min-h-screen flex items-center justify-center px-4 py-10 bg-gradient-to-b from-gray-50 via-white to-gray-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+      <div className="w-full max-w-md">
+        <div className="flex flex-col items-center text-center mb-8">
+          <Link
+            href="/"
+            aria-label="Go to home"
+            className="rounded-2xl bg-black/5 p-3 ring-1 ring-black/10 shadow-xl shadow-black/10 transition hover:shadow-black/20 focus:outline-none focus:ring-2 focus:ring-sky-500/40 dark:bg-white/5 dark:ring-white/10 dark:shadow-black/30 dark:hover:shadow-black/40"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/assets/logo/syncup-icon.png"
+              alt="SyncUp logo"
+              className="h-14 w-14 object-contain rounded-xl"
+            />
+          </Link>
+          <h1 className="mt-6 text-xl font-bold text-gray-900 dark:text-white">{tr("로그인", "ログイン")}</h1>
+        </div>
 
-      <div className="relative z-10 flex items-start justify-center min-h-[calc(100vh-64px)] px-6 lg:px-10 py-8">
-        <div className="max-w-7xl w-full grid md:grid-cols-[minmax(0,1fr)_520px] gap-10 items-center">
-          <div className="text-left">
-            <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6 leading-tight">
-              {tr("다시 만나서 반가워요", "おかえりなさい")}
-              <br />
-              <span className="text-gray-900">Sync Up</span>
-            </h1>
-
-            <p className="text-gray-700 leading-relaxed max-w-md">
-              {tr(
-                "이메일과 비밀번호로 로그인해 주세요.",
-                "メールとパスワードでログインしてください。"
-              )}
-            </p>
-          </div>
-
-          <div className="bg-white rounded-3xl shadow-2xl p-8 md:p-10 w-full md:w-[520px] md:min-w-[520px] md:max-w-[520px] justify-self-end border border-gray-200">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">
-              {tr("로그인", "ログイン")}
-            </h2>
-
-            <form className="space-y-4" onSubmit={onSubmit}>
-              <div>
-                <label className="block text-sm font-medium text-gray-800 mb-2">
-                  {tr("이메일", "メール")}
-                </label>
-                <input
-                  type="text"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder={tr("user@test.com", "user@test.com")}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-300"
-                  autoComplete="email"
-                  disabled={isBusy}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-800 mb-2">
-                  {tr("비밀번호", "パスワード")}
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={tr(
-                    "비밀번호를 입력해 주세요",
-                    "パスワードを入力してください"
-                  )}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-300"
-                  autoComplete="current-password"
-                  disabled={isBusy}
-                />
-              </div>
-
-              {error ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {error}
-                </div>
-              ) : null}
-
-              {/* ✅ 검정 로그인 버튼 */}
-              <button
-                type="submit"
-                disabled={!canSubmit || submitting || oauthChecking}
-                className={[
-                  "w-full py-3 rounded-lg transition-colors font-medium",
-                  !canSubmit || submitting || oauthChecking
-                    ? "bg-gray-500 text-white cursor-not-allowed"
-                    : "bg-gray-900 text-white hover:bg-gray-800",
-                ].join(" ")}
-              >
-                {submitting
-                  ? tr("로그인 중...", "ログイン中...")
-                  : tr("로그인", "ログイン")}
-              </button>
-
-              {/* ✅ GitHub 로그인 버튼: 검정 로그인 버튼 아래 */}
-              <button
-                type="button"
-                onClick={onGithubLogin}
+        <div className="rounded-2xl bg-white border border-gray-200 p-6 shadow-2xl dark:bg-black/20 dark:backdrop-blur dark:border-white/10">
+          <form className="space-y-4" onSubmit={onSubmit}>
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-2 dark:text-white/90">
+                {tr("이메일", "メール")}
+              </label>
+              <input
+                type="text"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={tr("이메일을 입력해 주세요", "メールアドレスを入力してください")}
+                className="w-full h-11 px-4 rounded-lg bg-gray-50 text-gray-900 placeholder:text-gray-400 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-sky-500/30 dark:bg-black/30 dark:text-white dark:placeholder:text-white/40 dark:border-white/10 dark:focus:ring-sky-500/50"
+                autoComplete="email"
                 disabled={isBusy}
-                className={[
-                  "w-full py-3 rounded-lg transition-colors font-medium border flex items-center justify-center gap-2",
-                  isBusy
-                    ? "bg-gray-100 text-gray-500 cursor-not-allowed border-gray-200"
-                    : "bg-white text-gray-900 hover:bg-gray-50 border-gray-300",
-                ].join(" ")}
-              >
-                <GithubIcon className="h-5 w-5" />
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-2 dark:text-white/90">
+                {tr("비밀번호", "パスワード")}
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={tr("비밀번호를 입력해 주세요", "パスワードを入力してください")}
+                className="w-full h-11 px-4 rounded-lg bg-gray-50 text-gray-900 placeholder:text-gray-400 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-sky-500/30 dark:bg-black/30 dark:text-white dark:placeholder:text-white/40 dark:border-white/10 dark:focus:ring-sky-500/50"
+                autoComplete="current-password"
+                disabled={isBusy}
+              />
+            </div>
+
+            {error ? (
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {error}
+              </div>
+            ) : null}
+
+            <button
+              type="submit"
+              disabled={!canSubmit || isBusy}
+              className={[
+                "w-full h-11 rounded-lg font-semibold transition-colors",
+                !canSubmit || isBusy
+                  ? "bg-slate-600 text-white/80 cursor-not-allowed"
+                  : "bg-sky-500 text-white hover:bg-sky-400",
+              ].join(" ")}
+            >
+              {submitting ? tr("로그인 중...", "ログイン中...") : tr("로그인", "ログイン")}
+            </button>
+
+            <div className="my-2 flex items-center gap-3">
+              <div className="h-px flex-1 bg-gray-200 dark:bg-white/10" />
+              <div className="text-xs text-gray-500 dark:text-white/60">{tr("또는", "または")}</div>
+              <div className="h-px flex-1 bg-gray-200 dark:bg-white/10" />
+            </div>
+
+            <button
+              type="button"
+              onClick={onGithubLogin}
+              disabled={isBusy}
+              className={[
+                "h-11 w-full rounded-lg border flex items-center justify-center gap-2 transition-colors font-semibold",
+                "border-gray-200 bg-white text-gray-900 hover:bg-gray-50",
+                "dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10",
+                isBusy ? "opacity-60 cursor-not-allowed" : "",
+              ].join(" ")}
+            >
+              <GithubIcon className="h-5 w-5" />
+              <span className="text-sm font-semibold">
                 {oauthChecking
                   ? tr("GitHub 로그인 확인 중...", "GitHubログイン確認中...")
                   : tr("GitHub로 로그인", "GitHubでログイン")}
-              </button>
-              <div className="flex items-center justify-between pt-2">
-                <Link href="/signup" className="text-sm text-gray-700 hover:underline">
-                  {tr("회원가입", "会員登録")}
-                </Link>
+              </span>
+            </button>
 
-                <Link href="/" className="text-sm text-gray-500 hover:underline">
-                  {tr("홈으로", "ホームへ")}
-                </Link>
-              </div>
-            </form>
-          </div>
+            <div className="pt-2 text-center text-sm text-gray-600 dark:text-white/70">
+              {tr("아직 회원이 아니신가요?", "まだ会員ではありませんか？")}{" "}
+              <Link href="/signup" className="text-sky-600 hover:text-sky-700 underline dark:text-sky-300 dark:hover:text-sky-200">
+                {tr("회원가입", "会員登録")}
+              </Link>
+            </div>
+          </form>
         </div>
       </div>
     </div>
