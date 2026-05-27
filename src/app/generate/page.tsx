@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { getCurrentUser } from "@/lib/auth";
+import {
+  DEFAULT_OPEN_AI_BUNDLE_MODEL,
+  OPEN_AI_BUNDLE_MODEL_OPTIONS,
+  type OpenAiBundleModelId,
+} from "@/lib/openai-bundle-models";
 
 const LANGS = ["KO", "EN"] as const;
 
@@ -11,6 +16,9 @@ export default function GenerateDraftPage() {
   const router = useRouter();
   const [ideaText, setIdeaText] = useState("");
   const [language, setLanguage] = useState<(typeof LANGS)[number]>("KO");
+  const [openAiModel, setOpenAiModel] = useState<OpenAiBundleModelId>(
+    DEFAULT_OPEN_AI_BUNDLE_MODEL,
+  );
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -69,6 +77,7 @@ export default function GenerateDraftPage() {
         body: JSON.stringify({
           ideaText,
           language,
+          openAiModel,
           createdById: me?.id ?? undefined,
         }),
       });
@@ -120,22 +129,60 @@ export default function GenerateDraftPage() {
           className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300"
         />
 
-        <label className="mt-4 grid max-w-xs gap-2 text-sm">
-          <span className="font-semibold">언어</span>
-          <select
-            value={language}
-            onChange={(e) =>
-              setLanguage(e.target.value as (typeof LANGS)[number])
-            }
-            className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
-          >
-            {LANGS.map((lang) => (
-              <option key={lang} value={lang}>
-                {lang}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="grid max-w-xs gap-2 text-sm">
+            <span className="font-semibold">언어</span>
+            <select
+              value={language}
+              onChange={(e) =>
+                setLanguage(e.target.value as (typeof LANGS)[number])
+              }
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+            >
+              {LANGS.map((lang) => (
+                <option key={lang} value={lang}>
+                  {lang}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <fieldset className="text-sm">
+            <legend className="font-semibold text-gray-900">AI 모델</legend>
+            <p className="mt-1 text-xs text-gray-500">
+              기획 번들을 만들 때 사용할 OpenAI 모델을 골라요.
+            </p>
+            <div className="mt-2 flex flex-col gap-2">
+              {OPEN_AI_BUNDLE_MODEL_OPTIONS.map((opt) => (
+                <label
+                  key={opt.id}
+                  className={`flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-2 ${
+                    openAiModel === opt.id
+                      ? "border-gray-900 bg-gray-50"
+                      : "border-gray-200 bg-white hover:bg-gray-50"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="openAiModel"
+                    value={opt.id}
+                    checked={openAiModel === opt.id}
+                    onChange={() => setOpenAiModel(opt.id)}
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="font-medium text-gray-900">
+                      {opt.label}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-gray-500">
+                      {opt.description}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        </div>
 
         {errorMsg && (
           <pre className="mt-4 whitespace-pre-wrap rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
