@@ -17,6 +17,7 @@ import type {
 } from "@/lib/types/schedule";
 import EventFormModal from "./EventFormModal";
 import MemberProgressModal from "./MemberProgressModal";
+import AiScheduleDraftModal from "./AiScheduleDraftModal";
 
 const STATUS_ORDER = ["IN_PROGRESS", "REVIEW", "TODO", "BLOCKED"] as const;
 const PRIORITY_ORDER = ["URGENT", "HIGH", "MEDIUM", "LOW"] as const;
@@ -282,6 +283,8 @@ export default function ProjectSchedule({ projectId }: { projectId: string }) {
   const [restrictedEdit, setRestrictedEdit] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const [aiDraftOpen, setAiDraftOpen] = useState(false);
+
   const projectOwnerId = summary?.project?.ownerId ?? null;
 
   const authFetch = useCallback(
@@ -469,6 +472,12 @@ export default function ProjectSchedule({ projectId }: { projectId: string }) {
         <p className="mt-1 text-xs text-gray-500">프로젝트 완성을 위해 필요한 작업을 등록하고, 담당자/진행률/상태를 공유합니다.</p>
       </div>
       <div className="flex items-center gap-2">
+        <button
+          onClick={() => setAiDraftOpen(true)}
+          className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-800 hover:bg-indigo-100"
+        >
+          AI 일정 초안
+        </button>
         <button
           onClick={() => void refetchAll()}
           className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
@@ -832,6 +841,16 @@ export default function ProjectSchedule({ projectId }: { projectId: string }) {
           } finally {
             setSaving(false);
           }
+        }}
+      />
+
+      <AiScheduleDraftModal
+        open={aiDraftOpen}
+        projectId={projectId}
+        onClose={() => setAiDraftOpen(false)}
+        authFetch={authFetch}
+        onApplied={async () => {
+          await refetchAll();
         }}
       />
     </section>
