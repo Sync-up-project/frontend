@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { io, Socket } from "socket.io-client";
-import { getAccessToken, getApiBaseUrl } from "@/lib/auth";
+import { getAccessToken, getApiBaseUrl, refreshAccessToken } from "@/lib/auth";
 
 type ChatTab = "project" | "dm";
 
@@ -194,6 +194,7 @@ async function fetchMe(): Promise<{ id: string | null; chatLang: ChatLang }> {
     headers: { Authorization: `Bearer ${token}` },
     credentials: "include",
   });
+  if (res.status === 401) return { id: null, chatLang: "KO" };
   if (!res.ok) return { id: null, chatLang: "KO" };
 
   const json = await res.json();
@@ -341,6 +342,13 @@ export default function ChatWidget() {
     void syncAuthAndProfile();
 
     function onAuthChanged() {
+      if (socketRef.current) {
+        socketRef.current.removeAllListeners();
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      setJoinStatus("idle");
+      setJoinError(null);
       void syncAuthAndProfile();
     }
 
@@ -354,7 +362,7 @@ export default function ChatWidget() {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<ChatTab>("project");
 
-  const [unreadTotal, setUnreadTotal] = useState<number>(1);
+  const [unreadTotal, setUnreadTotal] = useState<number>(0);
 
   const [myId, setMyId] = useState<string | null>(null);
   const [myNickname, setMyNickname] = useState<string>("나");
@@ -491,15 +499,47 @@ export default function ChatWidget() {
     return `${names[0]} 외 ${names.length - 1}명 입력 중...`;
   }, [typingUsers]);
 
-  function connectSocketIfNeeded() {
+  function connectSocketIfNeeded(): Socket | null {
     if (socketRef.current) return socketRef.current;
+
+    const token = getAccessToken();
+    if (!token) {
+      setJoinStatus("error");
+      setJoinError("채팅을 사용하려면 먼저 로그인해 주세요.");
+      return null;
+    }
 
     const s = io(`${getApiBaseUrl()}/chat`, {
       transports: ["websocket"],
       withCredentials: true,
+      auth: { token },
     });
 
     socketRef.current = s;
+
+    s.on("connect_error", (err: Error) => {
+      const msg = err?.message ?? "";
+      const authRelated =
+        /unauthorized|jwt|token|인증/i.test(msg);
+
+      if (authRelated) {
+        void refreshAccessToken()
+          .then(() => {
+            const newToken = getAccessToken();
+            if (!newToken) throw new Error("no token");
+            s.auth = { token: newToken };
+            s.connect();
+          })
+          .catch(() => {
+            setJoinStatus("error");
+            setJoinError("채팅 인증이 만료되었습니다. 다시 로그인해 주세요.");
+          });
+        return;
+      }
+
+      setJoinStatus("error");
+      setJoinError("채팅 서버에 연결하지 못했습니다.");
+    });
 
     s.on("disconnect", () => {
       setJoinStatus("idle");
@@ -644,8 +684,9 @@ export default function ChatWidget() {
     }
 
     const s = connectSocketIfNeeded();
+    if (!s) return;
 
-    s.emit("join", { userId: myId, projectId: targetProjectId }, (ack: any) => {
+    s.emit("join", { projectId: targetProjectId }, (ack: any) => {
       if (ack?.status === "joined") {
         setJoinStatus("joined");
         setJoinError(null);
@@ -710,17 +751,30 @@ export default function ChatWidget() {
 
   useEffect(() => {
     if (!open) return;
-
     if (tab !== "project") return;
 
-    if (canUseProjectChat) {
-      joinProjectRoom();
-    } else {
+    if (!canUseProjectChat || !effectiveProjectId) {
       setJoinStatus("error");
-      setJoinError("참여 가능한 프로젝트 채팅방이 없습니다.");
+      setJoinError(
+        !getAccessToken()
+          ? "채팅을 사용하려면 먼저 로그인해 주세요."
+          : "참여 가능한 프로젝트 채팅방이 없습니다.",
+      );
+      return;
     }
+
+    setMessages([]);
+    setJoinStatus("idle");
+    setJoinError(null);
+    if (socketRef.current) {
+      socketRef.current.removeAllListeners();
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+
+    void joinProjectRoom();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, tab, canUseProjectChat]);
+  }, [open, tab, canUseProjectChat, effectiveProjectId]);
 
   // 로그인하지 않은 상태에서는 위젯 자체를 렌더링하지 않음
   if (!isAuthed) return null;

@@ -47,11 +47,14 @@ export async function POST(req: Request) {
     const target = joinUrl(backend, "/projects");
 
     const body = await req.text();
+    const authorization =
+      req.headers.get("authorization") ?? req.headers.get("Authorization") ?? "";
 
     const res = await fetch(target, {
       method: "POST",
       headers: {
         "content-type": "application/json",
+        ...(authorization ? { Authorization: authorization } : {}),
       },
       body,
       cache: "no-store",

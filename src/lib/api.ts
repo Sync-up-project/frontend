@@ -1,6 +1,7 @@
 // src/lib/api.ts
 
 import { getAccessToken, getApiBaseUrl, refreshAccessToken } from "@/lib/auth";
+import { parseApiError } from "@/lib/api-error";
 
 import type {
   ProjectListResponse,
@@ -95,14 +96,16 @@ async function apiFetchInner<T>(path: string, options: ApiOptions, retryCount: n
 
   if (auth) {
     const token = getAccessToken();
-    if (token) {
-      finalHeaders["Authorization"] = `Bearer ${token}`;
+    if (!token) {
+      throw new Error("로그인이 필요합니다.");
     }
+    finalHeaders["Authorization"] = `Bearer ${token}`;
   }
 
   const res = await fetch(url, {
     method,
     headers: finalHeaders,
+    credentials: "include",
     body:
       body === undefined
         ? undefined
@@ -132,26 +135,15 @@ async function apiFetchInner<T>(path: string, options: ApiOptions, retryCount: n
   }
 
   if (!res.ok) {
-    let message = `API Error (${res.status})`;
     const trimmed = rawBody.trim();
-    if (trimmed) {
-      if (isJson) {
-        try {
-          const payload = JSON.parse(trimmed) as Record<string, unknown>;
-          if (typeof payload === "object" && payload !== null) {
-            if ("message" in payload || "error" in payload) {
-              message =
-                String((payload as any).message ?? (payload as any).error ?? message);
-            }
-          }
-        } catch {
-          message = trimmed;
-        }
-      } else {
-        message = trimmed;
+    if (trimmed && isJson) {
+      try {
+        throw parseApiError(JSON.parse(trimmed), res.status);
+      } catch (e) {
+        if (e instanceof Error && e.name === "ApiError") throw e;
       }
     }
-    throw new Error(message);
+    throw parseApiError(trimmed || null, res.status);
   }
 
   if (res.status === 204 || res.status === 205) {

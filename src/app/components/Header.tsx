@@ -6,7 +6,12 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 
-import { clearAccessToken, getAccessToken, getCurrentUser } from "@/lib/auth";
+import {
+  clearAccessToken,
+  getAccessToken,
+  getCurrentUser,
+  getApiBaseUrl,
+} from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import { normalizeDisplayUser, getLanguageBadge } from "@/lib/userDisplay";
 
@@ -76,6 +81,11 @@ export default function Header() {
 
   async function onLogout() {
     try {
+      await fetch(`${getApiBaseUrl()}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      });
       clearAccessToken();
     } finally {
       setIsAuthed(false);

@@ -306,12 +306,15 @@ export default function DraftDetailPage({
     ].filter(Boolean);
 
     setConfirming(true);
+    const token = getAccessToken();
     const res = await fetch("/api/projects/confirm", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify({
         artifactId,
-        ownerId: currentUserId ?? undefined,
         title,
         mode: "ONLINE",
         difficulty: "MEDIUM",

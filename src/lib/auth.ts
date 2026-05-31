@@ -47,14 +47,9 @@ const TOKEN_KEY = "syncup_access_token";
 const SESSION_USER_KEY = "syncup_session_user";
 const ACTIVE_PROJECT_KEY = "syncup_active_project_id";
 
-export function getApiBaseUrl(): string {
-  const env =
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    process.env.NEXT_PUBLIC_API_URL ??
-    process.env.NEXT_PUBLIC_BACKEND_URL;
-  const base = env ?? "http://localhost:3001";
-  return base;
-}
+export { getApiBaseUrl } from "./api-base-url";
+import { getApiBaseUrl } from "./api-base-url";
+import { parseApiError } from "./api-error";
 
 function notifyAuthChanged(): void {
   if (typeof window === "undefined") return;
@@ -125,11 +120,10 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promi
   const data = isJson ? await res.json().catch(() => null) : await res.text().catch(() => null);
 
   if (!res.ok) {
-    const message =
-      (data && typeof data === "object" && "message" in data && String((data as any).message)) ||
-      (typeof data === "string" && data) ||
-      `요청에 실패했습니다. (HTTP ${res.status})`;
-    throw new Error(message);
+    if (data && typeof data === "object") {
+      throw parseApiError(data, res.status);
+    }
+    throw parseApiError(typeof data === "string" ? data : null, res.status);
   }
 
   return data as T;
@@ -187,6 +181,8 @@ export async function fetchCurrentUser(): Promise<SessionUser> {
   saveCurrentUser(normalized);
   return normalized;
 }
+
+export { consumeOAuthSession } from "./auth/oauth";
 
 export async function refreshAccessToken(): Promise<{ accessToken: string; expiresIn?: number }> {
   const url = `${getApiBaseUrl()}/auth/refresh`;

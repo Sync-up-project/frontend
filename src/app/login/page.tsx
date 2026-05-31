@@ -4,20 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
-import { login, getAccessToken, fetchCurrentUser, saveAccessToken } from "@/lib/auth";
+import {
+  login,
+  getAccessToken,
+  fetchCurrentUser,
+  consumeOAuthSession,
+  getApiBaseUrl,
+} from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-function getBackendBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_BACKEND_URL ??
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    process.env.NEXT_PUBLIC_API_URL ??
-    "http://localhost:3001"
-  );
 }
 
 function GithubIcon({ className }: { className?: string }) {
@@ -40,7 +37,6 @@ export default function LoginPage() {
 
   const next = searchParams.get("next") || "/projects";
   const oauth = searchParams.get("oauth"); // success | failed | null
-  const oauthAccessToken = searchParams.get("accessToken");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -77,11 +73,11 @@ export default function LoginPage() {
         setOauthChecking(true);
         setError("");
         try {
-          if (oauthAccessToken) {
-            saveAccessToken(oauthAccessToken);
+          const { accessToken } = await consumeOAuthSession();
+          if (!accessToken) {
+            throw new Error("GitHub 로그인 토큰을 저장하지 못했습니다.");
           }
 
-          // OAuth 콜백은 accessToken을 query로 넘기고, 여기서 /auth/me로 세션을 확정합니다.
           const me = await fetchCurrentUser();
           if (!mounted) return;
 
@@ -116,7 +112,7 @@ export default function LoginPage() {
     return () => {
       mounted = false;
     };
-  }, [oauth, oauthAccessToken, next, router, tr]);
+  }, [oauth, next, router, tr]);
 
   const canSubmit = useMemo(() => {
     if (!isValidEmail(email.trim())) return false;
@@ -160,7 +156,7 @@ export default function LoginPage() {
   function onGithubLogin() {
     setError("");
 
-    const backend = getBackendBaseUrl();
+    const backend = getApiBaseUrl();
     const url = new URL(`${backend}/auth/github`);
     url.searchParams.set("next", next);
 

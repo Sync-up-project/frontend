@@ -33,12 +33,14 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
 
   if (auth) {
     const token = getAccessToken();
-    if (token) finalHeaders["Authorization"] = `Bearer ${token}`;
+    if (!token) throw new Error("로그인이 필요합니다.");
+    finalHeaders["Authorization"] = `Bearer ${token}`;
   }
 
   const res = await fetch(url, {
     method,
     headers: finalHeaders,
+    credentials: "include",
     body:
       body === undefined
         ? undefined
@@ -199,7 +201,7 @@ function normalizeKanban(projectId: string, payload: any): KanbanBoardDto {
 
 // GET /projects/:projectId/kanban
 export async function apiGetKanban(projectId: string): Promise<KanbanBoardDto> {
-  const data = await apiFetch<any>(`/projects/${projectId}/kanban`, { auth: false });
+  const data = await apiFetch<any>(`/projects/${projectId}/kanban`, { auth: true });
   return normalizeKanban(projectId, data);
 }
 
@@ -207,7 +209,7 @@ export async function apiGetKanban(projectId: string): Promise<KanbanBoardDto> {
 export async function apiInitKanban(projectId: string): Promise<KanbanBoardDto> {
   const data = await apiFetch<any>(`/projects/${projectId}/kanban/init`, {
     method: "POST",
-    auth: false,
+    auth: true,
   });
   return normalizeKanban(projectId, data);
 }
@@ -216,7 +218,7 @@ export async function apiInitKanban(projectId: string): Promise<KanbanBoardDto> 
 export async function apiCreateKanbanColumn(projectId: string, body: { title: string; position?: number }) {
   return apiFetch<any>(`/projects/${projectId}/kanban/columns`, {
     method: "POST",
-    auth: false,
+    auth: true,
     body,
   });
 }
@@ -225,7 +227,7 @@ export async function apiCreateKanbanColumn(projectId: string, body: { title: st
 export async function apiUpdateKanbanColumn(projectId: string, columnId: string, body: { title?: string; position?: number }) {
   return apiFetch<any>(`/projects/${projectId}/kanban/columns/${columnId}`, {
     method: "PATCH",
-    auth: false,
+    auth: true,
     body,
   });
 }
@@ -234,7 +236,7 @@ export async function apiUpdateKanbanColumn(projectId: string, columnId: string,
 export async function apiDeleteKanbanColumn(projectId: string, columnId: string) {
   return apiFetch<any>(`/projects/${projectId}/kanban/columns/${columnId}`, {
     method: "DELETE",
-    auth: false,
+    auth: true,
   });
 }
 
@@ -242,7 +244,7 @@ export async function apiDeleteKanbanColumn(projectId: string, columnId: string)
 export async function apiCreateKanbanCard(projectId: string, body: { columnId: string; title: string; description?: string }) {
   return apiFetch<any>(`/projects/${projectId}/kanban/cards`, {
     method: "POST",
-    auth: false,
+    auth: true,
     body,
   });
 }
@@ -251,7 +253,7 @@ export async function apiCreateKanbanCard(projectId: string, body: { columnId: s
 export async function apiUpdateKanbanCard(projectId: string, cardId: string, body: { title?: string; description?: string; position?: number }) {
   return apiFetch<any>(`/projects/${projectId}/kanban/cards/${cardId}`, {
     method: "PATCH",
-    auth: false,
+    auth: true,
     body,
   });
 }
@@ -260,7 +262,7 @@ export async function apiUpdateKanbanCard(projectId: string, cardId: string, bod
 export async function apiDeleteKanbanCard(projectId: string, cardId: string) {
   return apiFetch<any>(`/projects/${projectId}/kanban/cards/${cardId}`, {
     method: "DELETE",
-    auth: false,
+    auth: true,
   });
 }
 
@@ -268,7 +270,7 @@ export async function apiDeleteKanbanCard(projectId: string, cardId: string) {
 export async function apiMoveKanbanCard(projectId: string, body: { cardId: string; toColumnId: string; toPosition: number }) {
   return apiFetch<any>(`/projects/${projectId}/kanban/cards/move`, {
     method: "POST",
-    auth: false,
+    auth: true,
     body,
   });
 }

@@ -104,9 +104,14 @@ function mapPositionNeeds(position: Position) {
 }
 
 async function postCreateProject(payload: any) {
+  const token = getAccessToken();
+
   const res = await fetch("/api/projects", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify(payload),
   });
 
@@ -242,7 +247,6 @@ export default function CreateProjectClient() {
 
       // ✅ 백엔드 POST /projects에 맞춘 payload
       const payload = {
-        ownerId: String(me.id), // (인증 붙이면 서버에서 userId 추출하도록 변경)
         originalLang: lang === "JP" ? "JA" : "KO",
         titleOriginal: title.trim(),
         summaryOriginal,
