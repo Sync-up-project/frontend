@@ -10,6 +10,7 @@ export type SessionUser = {
   nickname: string;
   email?: string;
   role?: string;
+  accountRole?: string;
   profileImageUrl?: string | null;
 
   // (선택) GitHub 확장 대비
@@ -158,6 +159,7 @@ export async function fetchCurrentUser(): Promise<SessionUser> {
     nickname: String(u?.nickname ?? u?.name ?? u?.username ?? ""),
     email: typeof u?.email === "string" ? u.email : undefined,
     role: typeof u?.role === "string" ? u.role : undefined,
+    accountRole: typeof u?.accountRole === "string" ? u.accountRole : undefined,
     profileImageUrl:
       (u?.profileImageUrl ??
         u?.profile_image_url ??
@@ -281,6 +283,27 @@ export async function login(payload: LoginRequest): Promise<LoginResponse> {
   try {
     await fetchCurrentUser();
     await syncActiveProjectForCurrentUser();
+  } catch {
+    // ignore
+  }
+
+  return res;
+}
+
+export async function adminLogin(payload: LoginRequest): Promise<LoginResponse> {
+  const url = `${getApiBaseUrl()}/auth/admin/login`;
+
+  const res = await fetchJson<LoginResponse>(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (res?.accessToken) saveAccessToken(res.accessToken);
+  if (res?.user) saveCurrentUser(res.user);
+
+  try {
+    await fetchCurrentUser();
   } catch {
     // ignore
   }

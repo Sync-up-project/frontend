@@ -3,15 +3,19 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import ThemeToggle from "@/components/theme-toggle";
 import DraftViewer from "@/components/draft/DraftViewer";
 import KanbanBoardDndView from "@/components/kanban/KanbanBoardDndView";
 import ProjectSchedule from "@/components/schedule/ProjectSchedule";
 import { fetchCurrentUser, getAccessToken, getCurrentUser } from "@/lib/auth";
 import {
+  apiApproveProjectMemberRemovalRequest,
+  apiGetProjectMembers,
   apiGetProjectMeParticipation,
   apiPatchInvitation,
+  apiPostProjectMemberRemovalRequest,
   apiPostProjectApplication,
+  type ProjectMemberListResponse,
+  type ProjectMemberRemovalRequest,
 } from "@/lib/api";
 
 type Project = {
@@ -30,6 +34,18 @@ type Project = {
   endDate?: string | null;
   createdAt: string;
   updatedAt: string;
+  members?: Array<{
+    id: string;
+    userId: string;
+    roleInProject?: string | null;
+    joinedAt?: string;
+    user?: {
+      id: string;
+      nickname?: string | null;
+      profileImageUrl?: string | null;
+      role?: string | null;
+    };
+  }>;
 };
 
 type LatestArtifact = {
@@ -208,6 +224,10 @@ export default function ProjectDetailPage({
   const [joinModalOpen, setJoinModalOpen] = useState(false);
   const [applyMessage, setApplyMessage] = useState("");
   const [participationBusy, setParticipationBusy] = useState(false);
+  const [membersData, setMembersData] = useState<ProjectMemberListResponse | null>(null);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [membersError, setMembersError] = useState<string | null>(null);
+  const [memberRemovalBusyKey, setMemberRemovalBusyKey] = useState<string | null>(null);
 
   // ---- Add Card Modal state ----
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -626,6 +646,69 @@ export default function ProjectDetailPage({
     setDeleteTarget(null);
   };
 
+  const fetchMembers = useCallback(async () => {
+    const token = getAccessToken();
+    if (!token) {
+      setMembersData(null);
+      setMembersError(null);
+      return;
+    }
+
+    setMembersLoading(true);
+    setMembersError(null);
+    try {
+      const res = await apiGetProjectMembers(projectId);
+      setMembersData(res);
+    } catch (e) {
+      setMembersError(String(e));
+    } finally {
+      setMembersLoading(false);
+    }
+  }, [projectId]);
+
+  const requestMemberRemoval = async (targetUserId: string) => {
+    const key = `request:${targetUserId}`;
+    setMemberRemovalBusyKey(key);
+    try {
+      await apiPostProjectMemberRemovalRequest(projectId, { targetUserId });
+      await fetchMembers();
+      alert("퇴장 요청을 보냈습니다. 상대방이 동의하면 퇴장 처리됩니다.");
+    } catch (e) {
+      alert(`퇴장 요청 실패: ${String(e)}`);
+    } finally {
+      setMemberRemovalBusyKey(null);
+    }
+  };
+
+  const approveMemberRemoval = async (requestId: string) => {
+    const key = `approve:${requestId}`;
+    setMemberRemovalBusyKey(key);
+    try {
+      const res = await apiApproveProjectMemberRemovalRequest(projectId, requestId);
+      await fetchMembers();
+      await reloadParticipation();
+      await fetchProjectDetail();
+      alert(
+        res?.status === "COMPLETED"
+          ? "양쪽 동의가 완료되어 멤버가 퇴장 처리되었습니다."
+          : "퇴장 요청에 동의했습니다.",
+      );
+    } catch (e) {
+      alert(`퇴장 동의 실패: ${String(e)}`);
+    } finally {
+      setMemberRemovalBusyKey(null);
+    }
+  };
+
+  useEffect(() => {
+    if (currentUserId && (isOwner || isMember)) {
+      fetchMembers();
+      return;
+    }
+    setMembersData(null);
+    setMembersError(null);
+  }, [currentUserId, isOwner, isMember, fetchMembers]);
+
   const submitDelete = async () => {
     if (!deleteTarget?.cardId) return;
 
@@ -788,7 +871,6 @@ export default function ProjectDetailPage({
               </Link>
             </>
           ) : null}
-          <ThemeToggle />
         </div>
       </div>
 
@@ -912,7 +994,17 @@ export default function ProjectDetailPage({
                 <p className="text-gray-600">{project?.descriptionOriginal ?? "-"}</p>
               </Card>
 
-              <MembersSummaryCard project={project} />
+              <MembersSummaryCard
+                project={project}
+                currentUserId={currentUserId}
+                isOwner={isOwner}
+                membersData={membersData}
+                loading={membersLoading}
+                error={membersError}
+                busyKey={memberRemovalBusyKey}
+                onRequestRemoval={requestMemberRemoval}
+                onApproveRemoval={approveMemberRemoval}
+              />
             </div>
 
             <KanbanSummaryCard
@@ -956,7 +1048,17 @@ export default function ProjectDetailPage({
               <Card title="설명">
                 <p className="text-gray-600">{project?.descriptionOriginal ?? "-"}</p>
               </Card>
-              <MembersSummaryCard project={project} />
+              <MembersSummaryCard
+                project={project}
+                currentUserId={currentUserId}
+                isOwner={isOwner}
+                membersData={membersData}
+                loading={membersLoading}
+                error={membersError}
+                busyKey={memberRemovalBusyKey}
+                onRequestRemoval={requestMemberRemoval}
+                onApproveRemoval={approveMemberRemoval}
+              />
             </div>
 
             <ArtifactSummaryCard

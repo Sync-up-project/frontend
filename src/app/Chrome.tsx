@@ -8,7 +8,7 @@ import ChatWidget from "./components/ChatWidget";
 
 function isAuthRoute(pathname: string | null): boolean {
   if (!pathname) return false;
-  return pathname === "/login" || pathname === "/signup";
+  return pathname === "/login" || pathname === "/signup" || pathname.startsWith("/admin");
 }
 
 export function Chrome({ children }: { children: React.ReactNode }) {

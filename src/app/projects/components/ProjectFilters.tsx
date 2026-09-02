@@ -1,7 +1,9 @@
 // src/app/projects/components/ProjectFilters.tsx
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo } from "react";
+import { Check, RotateCcw, X } from "lucide-react";
+
 import { useI18n } from "@/lib/i18n";
 import {
   PROJECT_FILTER_STACKS,
@@ -40,46 +42,58 @@ const POSITIONS: DevPosition[] = [
   "ai",
 ];
 
-function Chevron({ open }: { open: boolean }) {
+function cx(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
+
+function FilterGroup({
+  title,
+  hint,
+  count,
+  children,
+}: {
+  title: string;
+  hint: string;
+  count?: number;
+  children: React.ReactNode;
+}) {
   return (
-    <svg
-      className={`h-5 w-5 transition-transform ${open ? "rotate-180" : ""}`}
-      viewBox="0 0 20 20"
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M5.5 7.5L10 12l4.5-4.5"
-        stroke="currentColor"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <section className="border-t border-gray-200 px-4 py-5 first:border-t-0 dark:border-white/10 sm:px-5">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-bold text-gray-950 dark:text-white">{title}</h3>
+          <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-white/55">{hint}</p>
+        </div>
+        {typeof count === "number" && count > 0 ? (
+          <span className="shrink-0 rounded-md bg-gray-950 px-2 py-1 text-xs font-bold text-white dark:bg-white dark:text-gray-950">
+            {count}
+          </span>
+        ) : null}
+      </div>
+      {children}
+    </section>
   );
 }
 
-function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
+function SelectedChip({ label, onRemove }: { label: string; onRemove: () => void }) {
   const { tr } = useI18n();
 
   return (
-    <span className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700">
-      {label}
+    <span className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2.5 text-xs font-bold text-blue-800 dark:border-sky-300/30 dark:bg-sky-300/10 dark:text-sky-100">
+      <span className="truncate">{label}</span>
       <button
         type="button"
         onClick={onRemove}
         aria-label={`${label} ${tr("제거", "削除")}`}
-        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-indigo-700/90 hover:bg-indigo-100 hover:text-indigo-800"
+        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-sky-100 dark:hover:bg-white/10"
       >
-        <span aria-hidden="true" className="leading-none">
-          ×
-        </span>
+        <X className="h-3.5 w-3.5" aria-hidden="true" />
       </button>
     </span>
   );
 }
 
-function SelectRow({
+function PositionButton({
   label,
   active,
   onClick,
@@ -91,19 +105,21 @@ function SelectRow({
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
-      className={`w-full rounded-xl px-4 py-3 text-left text-sm font-semibold transition ${
+      className={cx(
+        "flex min-h-10 items-center justify-center rounded-md border px-3 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-blue-500",
         active
-          ? "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-white/10 dark:text-white dark:ring-white/15"
-          : "bg-white text-gray-800 hover:bg-gray-50 ring-1 ring-gray-200 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10 dark:ring-white/10"
-      }`}
+          ? "border-gray-950 bg-gray-950 text-white shadow-sm dark:border-white dark:bg-white dark:text-gray-950"
+          : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/75 dark:hover:bg-white/10"
+      )}
     >
       {label}
     </button>
   );
 }
 
-function TogglePill({
+function OptionChip({
   label,
   active,
   onClick,
@@ -115,49 +131,18 @@ function TogglePill({
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
-      className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+      className={cx(
+        "inline-flex h-9 max-w-full items-center gap-1.5 rounded-md border px-3 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-blue-500",
         active
-          ? "bg-indigo-600 text-white shadow-sm dark:bg-white dark:text-slate-950"
-          : "bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/15"
-      }`}
+          ? "border-blue-600 bg-blue-600 text-white shadow-sm dark:border-sky-300 dark:bg-sky-300 dark:text-gray-950"
+          : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/75 dark:hover:bg-white/10"
+      )}
     >
-      {label}
+      {active ? <Check className="h-4 w-4 shrink-0" aria-hidden="true" /> : null}
+      <span className="truncate">{label}</span>
     </button>
-  );
-}
-
-function Section({
-  title,
-  subtitle,
-  open,
-  onToggle,
-  children,
-}: {
-  title: string;
-  subtitle: string;
-  open: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-2xl border border-gray-200 bg-white dark:bg-white/5 dark:border-white/10">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center justify-between gap-4 px-5 py-4"
-      >
-        <div className="min-w-0">
-          <p className="text-sm font-extrabold text-gray-900 dark:text-white">{title}</p>
-          <p className="mt-1 text-xs font-medium text-gray-500 dark:text-white/60">{subtitle}</p>
-        </div>
-        <span className="text-gray-500 dark:text-white/60">
-          <Chevron open={open} />
-        </span>
-      </button>
-
-      {open ? <div className="px-5 pb-5">{children}</div> : null}
-    </div>
   );
 }
 
@@ -172,11 +157,7 @@ export default function ProjectFilters({ value, onChange }: Props) {
     };
   }, [value]);
 
-  const [openPosition, setOpenPosition] = useState(true);
-  const [openStacks, setOpenStacks] = useState(false);
-  const [openTools, setOpenTools] = useState(false);
-
-  const positionLabelOf = (pos: DevPosition) => {
+  const positionLabelOf = useCallback((pos: DevPosition) => {
     switch (pos) {
       case "frontend":
         return tr("프론트엔드", "フロントエンド");
@@ -196,169 +177,157 @@ export default function ProjectFilters({ value, onChange }: Props) {
       default:
         return tr("전체", "全体");
     }
-  };
+  }, [tr]);
 
-  const positionLabel = useMemo(
-    () => positionLabelOf(safe.position),
-    [safe.position]
-  );
-
-  const stacksSummary = useMemo(() => {
-    if (safe.stacks.length === 0) return tr("선택 없음", "未選択");
-    if (safe.stacks.length === 1) return safe.stacks[0];
-    return `${safe.stacks[0]}${tr(" 외 ", " ほか ")}${
-      safe.stacks.length - 1
-    }${tr("개", "件")}`;
-  }, [safe.stacks, tr]);
-
-  const toolsSummary = useMemo(() => {
-    if (safe.tools.length === 0) return tr("선택 없음", "未選択");
-    if (safe.tools.length === 1) return safe.tools[0];
-    return `${safe.tools[0]}${tr(" 외 ", " ほか ")}${
-      safe.tools.length - 1
-    }${tr("개", "件")}`;
-  }, [safe.tools, tr]);
-
-  const chips = useMemo(() => {
+  const selectedFilters = useMemo(() => {
     const result: { key: string; label: string; onRemove: () => void }[] = [];
 
     if (safe.position !== "all") {
       result.push({
         key: `pos:${safe.position}`,
-        label: positionLabel,
+        label: positionLabelOf(safe.position),
         onRemove: () => onChange({ ...safe, position: "all" }),
       });
     }
 
-    safe.stacks.forEach((s) => {
+    safe.stacks.forEach((stack) => {
       result.push({
-        key: `stack:${s}`,
-        label: s,
+        key: `stack:${stack}`,
+        label: stack,
         onRemove: () =>
-          onChange({ ...safe, stacks: safe.stacks.filter((x) => x !== s) }),
+          onChange({ ...safe, stacks: safe.stacks.filter((item) => item !== stack) }),
       });
     });
 
-    safe.tools.forEach((t) => {
+    safe.tools.forEach((tool) => {
       result.push({
-        key: `tool:${t}`,
-        label: t,
+        key: `tool:${tool}`,
+        label: tool,
         onRemove: () =>
-          onChange({ ...safe, tools: safe.tools.filter((x) => x !== t) }),
+          onChange({ ...safe, tools: safe.tools.filter((item) => item !== tool) }),
       });
     });
 
     return result;
-  }, [safe, onChange, positionLabel]);
+  }, [safe, onChange, positionLabelOf]);
+
+  const activeCount = selectedFilters.length;
 
   function resetAll() {
     onChange({ position: "all", stacks: [], tools: [] });
   }
 
-  function setPosition(pos: DevPosition) {
-    onChange({ ...safe, position: pos });
-    setOpenPosition(false);
+  function setPosition(position: DevPosition) {
+    onChange({ ...safe, position });
   }
 
-  function toggleStack(s: string) {
-    const next = safe.stacks.includes(s)
-      ? safe.stacks.filter((x) => x !== s)
-      : [...safe.stacks, s];
-    onChange({ ...safe, stacks: next });
+  function toggleStack(stack: string) {
+    onChange({
+      ...safe,
+      stacks: safe.stacks.includes(stack)
+        ? safe.stacks.filter((item) => item !== stack)
+        : [...safe.stacks, stack],
+    });
   }
 
-  function toggleTool(t: string) {
-    const next = safe.tools.includes(t)
-      ? safe.tools.filter((x) => x !== t)
-      : [...safe.tools, t];
-    onChange({ ...safe, tools: next });
+  function toggleTool(tool: string) {
+    onChange({
+      ...safe,
+      tools: safe.tools.includes(tool)
+        ? safe.tools.filter((item) => item !== tool)
+        : [...safe.tools, tool],
+    });
   }
 
   return (
-    <div className="space-y-3">
-      <aside className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:bg-white/5 dark:border-white/10">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-extrabold text-gray-900 dark:text-white">
-            {tr("필터", "フィルター")}
-          </h2>
+    <aside className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
+      <div className="border-b border-gray-200 bg-gray-50 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03] sm:px-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-base font-extrabold text-gray-950 dark:text-white">
+              {tr("프로젝트 필터", "プロジェクトフィルター")}
+            </h2>
+            <p className="mt-0.5 text-xs text-gray-500 dark:text-white/55">
+              {activeCount > 0
+                ? tr(`${activeCount}개 조건 적용 중`, `${activeCount}件の条件を適用中`)
+                : tr("조건을 선택해 목록을 좁혀보세요.", "条件を選んで一覧を絞り込みましょう。")}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={resetAll}
+            disabled={activeCount === 0}
+            className={cx(
+              "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-bold transition focus:outline-none focus:ring-2 focus:ring-blue-500",
+              activeCount === 0
+                ? "cursor-not-allowed border-gray-200 bg-white text-gray-300 dark:border-white/10 dark:bg-white/5 dark:text-white/25"
+                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-100 dark:border-white/15 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/15"
+            )}
+          >
+            <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+            {tr("초기화", "リセット")}
+          </button>
         </div>
 
-        {chips.length > 0 ? (
-          <div className="mt-4 flex flex-wrap gap-3">
-            {chips.map((c) => (
-              <Chip key={c.key} label={c.label} onRemove={c.onRemove} />
+        {selectedFilters.length > 0 ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {selectedFilters.map((filter) => (
+              <SelectedChip key={filter.key} label={filter.label} onRemove={filter.onRemove} />
             ))}
           </div>
-        ) : (
-          <p className="mt-4 text-xs font-medium text-gray-500 dark:text-white/60">
-            {tr("선택된 필터가 없습니다.", "選択されたフィルターはありません。")}
-          </p>
-        )}
+        ) : null}
+      </div>
 
-        <div className="mt-5 space-y-4">
-          <Section
-            title={tr("개발 직무", "開発職種")}
-            subtitle={positionLabel}
-            open={openPosition}
-            onToggle={() => setOpenPosition((v) => !v)}
-          >
-            <div className="space-y-2">
-              {POSITIONS.map((p) => (
-                <SelectRow
-                  key={p}
-                  label={positionLabelOf(p)}
-                  active={safe.position === p}
-                  onClick={() => setPosition(p)}
-                />
-              ))}
-            </div>
-          </Section>
-
-          <Section
-            title={tr("기술 스택", "技術スタック")}
-            subtitle={stacksSummary}
-            open={openStacks}
-            onToggle={() => setOpenStacks((v) => !v)}
-          >
-            <div className="flex flex-wrap gap-2">
-              {PROJECT_FILTER_STACKS.map((s) => (
-                <TogglePill
-                  key={s}
-                  label={s}
-                  active={safe.stacks.includes(s)}
-                  onClick={() => toggleStack(s)}
-                />
-              ))}
-            </div>
-          </Section>
-
-          <Section
-            title={tr("협업 도구", "協業ツール")}
-            subtitle={toolsSummary}
-            open={openTools}
-            onToggle={() => setOpenTools((v) => !v)}
-          >
-            <div className="flex flex-wrap gap-2">
-              {PROJECT_FILTER_TOOLS.map((t) => (
-                <TogglePill
-                  key={t}
-                  label={t}
-                  active={safe.tools.includes(t)}
-                  onClick={() => toggleTool(t)}
-                />
-              ))}
-            </div>
-          </Section>
-        </div>
-      </aside>
-
-      <button
-        type="button"
-        onClick={resetAll}
-        className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10"
+      <FilterGroup
+        title={tr("개발 직무", "開発職種")}
+        hint={tr("하나의 주요 역할을 선택합니다.", "主な役割を1つ選択します。")}
       >
-        {tr("초기화", "リセット")}
-      </button>
-    </div>
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-1 xl:grid-cols-2">
+          {POSITIONS.map((position) => (
+            <PositionButton
+              key={position}
+              label={positionLabelOf(position)}
+              active={safe.position === position}
+              onClick={() => setPosition(position)}
+            />
+          ))}
+        </div>
+      </FilterGroup>
+
+      <FilterGroup
+        title={tr("기술 스택", "技術スタック")}
+        hint={tr("프로젝트 태그에 포함된 기술을 고릅니다.", "プロジェクトタグに含まれる技術を選びます。")}
+        count={safe.stacks.length}
+      >
+        <div className="flex flex-wrap gap-2">
+          {PROJECT_FILTER_STACKS.map((stack) => (
+            <OptionChip
+              key={stack}
+              label={stack}
+              active={safe.stacks.includes(stack)}
+              onClick={() => toggleStack(stack)}
+            />
+          ))}
+        </div>
+      </FilterGroup>
+
+      <FilterGroup
+        title={tr("협업 도구", "協業ツール")}
+        hint={tr("사용 경험이 필요한 도구를 선택합니다.", "利用経験が必要なツールを選びます。")}
+        count={safe.tools.length}
+      >
+        <div className="flex flex-wrap gap-2">
+          {PROJECT_FILTER_TOOLS.map((tool) => (
+            <OptionChip
+              key={tool}
+              label={tool}
+              active={safe.tools.includes(tool)}
+              onClick={() => toggleTool(tool)}
+            />
+          ))}
+        </div>
+      </FilterGroup>
+    </aside>
   );
 }

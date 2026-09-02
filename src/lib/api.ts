@@ -401,6 +401,71 @@ export async function apiDeleteProjectMember(
   return apiFetch<any>(`/projects/${projectId}/members`, { method: "DELETE", auth: true, body });
 }
 
+export type ProjectMemberRemovalRequest = {
+  id: string;
+  projectId: string;
+  projectMemberId: string;
+  targetUserId: string;
+  requestedById: string;
+  ownerApprovedAt: string | null;
+  memberApprovedAt: string | null;
+  status: "PENDING" | "COMPLETED" | "CANCELLED";
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProjectMemberListResponse = {
+  owner: {
+    id: string;
+    nickname: string | null;
+    profileImageUrl: string | null;
+    role: string | null;
+  };
+  members: Array<{
+    id: string;
+    userId: string;
+    roleInProject: string | null;
+    joinedAt: string;
+    user: {
+      id: string;
+      nickname: string | null;
+      profileImageUrl: string | null;
+      role: string | null;
+    };
+  }>;
+  removalRequests: ProjectMemberRemovalRequest[];
+};
+
+export async function apiGetProjectMembers(
+  projectId: string,
+): Promise<ProjectMemberListResponse> {
+  return apiFetch<ProjectMemberListResponse>(
+    `/projects/${encodeURIComponent(projectId)}/members`,
+    { auth: true },
+  );
+}
+
+export async function apiPostProjectMemberRemovalRequest(
+  projectId: string,
+  body: { targetUserId: string },
+) {
+  return apiFetch<{ request: ProjectMemberRemovalRequest }>(
+    `/projects/${encodeURIComponent(projectId)}/member-removal-requests`,
+    { method: "POST", auth: true, body },
+  );
+}
+
+export async function apiApproveProjectMemberRemovalRequest(
+  projectId: string,
+  requestId: string,
+) {
+  return apiFetch<{ status: string; request?: ProjectMemberRemovalRequest }>(
+    `/projects/${encodeURIComponent(projectId)}/member-removal-requests/${encodeURIComponent(requestId)}/approve`,
+    { method: "PATCH", auth: true },
+  );
+}
+
 export async function apiDeleteProjectManagement(
   projectId: string,
   body: DeleteProjectManagementRequest,
@@ -765,6 +830,56 @@ export async function apiPatchNotice(
 export async function apiDeleteNotice(noticeId: string) {
   return apiFetch<any>(`/notices/${noticeId}`, {
     method: "DELETE",
+    auth: true,
+  });
+}
+
+/**
+ * ------------------------------------------------------------
+ * Notifications APIs
+ * ------------------------------------------------------------
+ */
+
+export type NotificationListItem = {
+  id: string;
+  type: string;
+  isRead: boolean;
+  originalLang: string;
+  title: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  project: { id: string; title: string } | null;
+  invitation: { id: string; status: string } | null;
+  application: { id: string; status: string } | null;
+  i18n?: Array<{ lang: string; title: string; body: string }>;
+};
+
+export type NotificationsResponse = {
+  items: NotificationListItem[];
+  unreadCount: number;
+};
+
+export async function apiGetNotifications(limit = 20): Promise<NotificationsResponse> {
+  const usp = new URLSearchParams({ limit: String(limit) });
+  return apiFetch<NotificationsResponse>(`/notifications?${usp.toString()}`, {
+    auth: true,
+  });
+}
+
+export async function apiMarkNotificationRead(notificationId: string) {
+  return apiFetch<{ ok: boolean }>(
+    `/notifications/${encodeURIComponent(notificationId)}/read`,
+    {
+      method: "PATCH",
+      auth: true,
+    },
+  );
+}
+
+export async function apiMarkAllNotificationsRead() {
+  return apiFetch<{ ok: boolean; count: number }>(`/notifications/read-all`, {
+    method: "PATCH",
     auth: true,
   });
 }

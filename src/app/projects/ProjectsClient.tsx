@@ -325,7 +325,7 @@ export default function ProjectsClient() {
           </div>
         </div>
 
-        <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[190px_minmax(0,1fr)_270px]">
+        <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_270px]">
           <div className="min-w-0">
             <ProjectFilters value={filters} onChange={setFilters} />
           </div>

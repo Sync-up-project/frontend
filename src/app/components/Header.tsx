@@ -8,7 +8,8 @@ import { useTheme } from "next-themes";
 
 import { clearAccessToken, getAccessToken, getCurrentUser } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
-import { normalizeDisplayUser, getLanguageBadge } from "@/lib/userDisplay";
+import { normalizeDisplayUser } from "@/lib/userDisplay";
+import NotificationCenter from "./NotificationCenter";
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -158,6 +159,8 @@ export default function Header() {
 
           {isAuthed ? (
             <>
+              <NotificationCenter />
+
               {/* 아바타(있으면) + 이름 */}
               <div className="flex items-center gap-2 rounded-full bg-zinc-100 px-3 py-1.5 text-sm text-zinc-800">
                 {avatarUrl ? (
