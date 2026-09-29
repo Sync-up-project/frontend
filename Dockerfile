@@ -12,6 +12,10 @@ WORKDIR /app
 RUN apk add --no-cache libc6-compat
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1
+# 브라우저가 호출할 백엔드 주소. NEXT_PUBLIC_* 는 빌드 시점에 번들에 박힙니다.
+# 비워 두면 "/backend" (리버스 프록시 경유) 를 사용합니다. → src/lib/backendUrl.ts
+ARG NEXT_PUBLIC_API_URL=
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build

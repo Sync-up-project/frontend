@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { getInternalBackendUrl } from "@/lib/backendUrl";
 
-const BACKEND = process.env.INTERNAL_BACKEND_URL ?? "http://backend:3000";
+const BACKEND = getInternalBackendUrl();
 
 export async function POST(
   req: Request,

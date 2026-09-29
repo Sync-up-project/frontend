@@ -1,16 +1,9 @@
 import { NextResponse } from "next/server";
-
-function getBackendBase() {
-  return (
-    process.env.INTERNAL_BACKEND_URL ??
-    process.env.NEXT_PUBLIC_API_URL ??
-    "http://backend:3000"
-  );
-}
+import { getInternalBackendUrl } from "@/lib/backendUrl";
 
 export async function GET(req: Request) {
   try {
-    const backend = getBackendBase();
+    const backend = getInternalBackendUrl();
     const url = new URL(req.url);
 
     const limit = url.searchParams.get("limit") ?? "20";

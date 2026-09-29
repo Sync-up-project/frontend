@@ -1,19 +1,12 @@
 import { NextResponse } from "next/server";
-
-function getBackendBase() {
-  return (
-    process.env.INTERNAL_BACKEND_URL ??
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    "http://backend:3000"
-  );
-}
+import { getInternalBackendUrl } from "@/lib/backendUrl";
 
 export async function GET(
   req: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const backend = getBackendBase();
+    const backend = getInternalBackendUrl();
     const urlObj = new URL(req.url);
     const limit = urlObj.searchParams.get("limit");
     const url = `${backend}/projects/${params.id}/recommend-users${
@@ -45,7 +38,7 @@ export async function GET(
       {
         error: "Proxy failed",
         detail: String(e),
-        backendBase: getBackendBase(),
+        backendBase: getInternalBackendUrl(),
       },
       { status: 500 }
     );

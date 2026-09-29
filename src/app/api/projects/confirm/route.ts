@@ -1,15 +1,8 @@
 import { NextResponse } from "next/server";
-
-function getBackendBase() {
-  return (
-    process.env.INTERNAL_BACKEND_URL ??
-    process.env.NEXT_PUBLIC_API_URL ??
-    "http://backend:3000"
-  );
-}
+import { getInternalBackendUrl } from "@/lib/backendUrl";
 
 export async function POST(req: Request) {
-  const backend = getBackendBase();
+  const backend = getInternalBackendUrl();
   const body = await req.json();
 
   const res = await fetch(`${backend}/projects/confirm`, {

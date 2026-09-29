@@ -1,19 +1,12 @@
 import { NextResponse } from "next/server";
-
-function getBackendBase() {
-  return (
-    process.env.INTERNAL_BACKEND_URL ??
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    "http://backend:3000"
-  );
-}
+import { getInternalBackendUrl } from "@/lib/backendUrl";
 
 export async function GET(
   req: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const backend = getBackendBase();
+    const backend = getInternalBackendUrl();
     const url = `${backend}/projects/${params.id}`;
 
     const res = await fetch(url, { cache: "no-store" });
@@ -33,7 +26,7 @@ export async function GET(
       {
         error: "Proxy failed",
         detail: String(e),
-        backendBase: getBackendBase(),
+        backendBase: getInternalBackendUrl(),
         hint:
           "docker 환경에서는 INTERNAL_BACKEND_URL=http://backend:3000 설정이 필요합니다.",
       },
@@ -47,7 +40,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const backend = getBackendBase();
+    const backend = getInternalBackendUrl();
     const url = `${backend}/projects/${params.id}`;
 
     // 쿠키 기반 인증이 붙을 가능성 대비(없으면 전달 안 함)
@@ -75,7 +68,7 @@ export async function DELETE(
       {
         error: "Proxy failed",
         detail: String(e),
-        backendBase: getBackendBase(),
+        backendBase: getInternalBackendUrl(),
       },
       { status: 500 }
     );
@@ -87,7 +80,7 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const backend = getBackendBase();
+    const backend = getInternalBackendUrl();
     const url = `${backend}/projects/${params.id}`;
     const cookie = req.headers.get("cookie") ?? "";
     const authorization = req.headers.get("authorization") ?? "";
@@ -115,7 +108,7 @@ export async function PATCH(
       {
         error: "Proxy failed",
         detail: String(e),
-        backendBase: getBackendBase(),
+        backendBase: getInternalBackendUrl(),
       },
       { status: 500 }
     );

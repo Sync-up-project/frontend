@@ -1,19 +1,12 @@
 import { NextResponse } from "next/server";
-
-function getBackendBase() {
-  return (
-    process.env.INTERNAL_BACKEND_URL ??
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    "http://backend:3000"
-  );
-}
+import { getInternalBackendUrl } from "@/lib/backendUrl";
 
 export async function PATCH(
   req: Request,
   { params }: { params: { id: string; eventId: string } }
 ) {
   try {
-    const backend = getBackendBase();
+    const backend = getInternalBackendUrl();
     const url = `${backend}/projects/${params.id}/calendar-events/${params.eventId}`;
 
     const cookie = req.headers.get("cookie") ?? "";
@@ -42,7 +35,7 @@ export async function PATCH(
       {
         error: "Proxy failed",
         detail: String(e),
-        backendBase: getBackendBase(),
+        backendBase: getInternalBackendUrl(),
       },
       { status: 500 }
     );
@@ -54,7 +47,7 @@ export async function DELETE(
   { params }: { params: { id: string; eventId: string } }
 ) {
   try {
-    const backend = getBackendBase();
+    const backend = getInternalBackendUrl();
     const url = `${backend}/projects/${params.id}/calendar-events/${params.eventId}`;
 
     const cookie = req.headers.get("cookie") ?? "";
@@ -80,7 +73,7 @@ export async function DELETE(
       {
         error: "Proxy failed",
         detail: String(e),
-        backendBase: getBackendBase(),
+        backendBase: getInternalBackendUrl(),
       },
       { status: 500 }
     );

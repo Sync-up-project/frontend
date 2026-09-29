@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
+import { getInternalBackendUrl } from "@/lib/backendUrl";
 
 export async function POST(
   req: Request,
   { params }: { params: { id: string } }
 ) {
-  const backend =
-    process.env.INTERNAL_BACKEND_URL ??
-    process.env.NEXT_PUBLIC_API_URL ??
-    "http://backend:3000";
+  const backend = getInternalBackendUrl();
   const body = await req.json();
   const res = await fetch(`${backend}/ai/artifacts/${params.id}/revise`, {
     method: "POST",
