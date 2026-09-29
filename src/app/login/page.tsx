@@ -1,23 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
-import { login, getAccessToken, fetchCurrentUser, saveAccessToken } from "@/lib/auth";
+import { login, getAccessToken, fetchCurrentUser, saveAccessToken, getApiBaseUrl } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-function getBackendBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_BACKEND_URL ??
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    process.env.NEXT_PUBLIC_API_URL ??
-    "http://localhost:3001"
-  );
 }
 
 function GithubIcon({ className }: { className?: string }) {
@@ -33,7 +24,16 @@ function GithubIcon({ className }: { className?: string }) {
   );
 }
 
+// useSearchParams() 를 쓰므로 Suspense 경계가 필요합니다 (Next.js 14 빌드 규칙)
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
+  );
+}
+
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { tr } = useI18n();
@@ -160,8 +160,7 @@ export default function LoginPage() {
   function onGithubLogin() {
     setError("");
 
-    const backend = getBackendBaseUrl();
-    const url = new URL(`${backend}/auth/github`);
+    const url = new URL(`${getApiBaseUrl()}/auth/github`, window.location.origin);
     url.searchParams.set("next", next);
 
     window.location.href = url.toString();

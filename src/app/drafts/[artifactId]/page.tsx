@@ -728,7 +728,7 @@ export default function DraftDetailPage({
         {!loading && !data && <p>드래프트를 찾을 수 없어요.</p>}
         {canManualEdit && !loading && data && (
           <p className="mb-3 text-xs text-gray-500">
-            각 탭 상단의 '이 내용 수정'으로 모달을 열어 해당 부분만 고칠 수 있어요. 저장 시 서버에서
+            각 탭 상단의 &apos;이 내용 수정&apos;으로 모달을 열어 해당 부분만 고칠 수 있어요. 저장 시 서버에서
             검증합니다.
           </p>
         )}

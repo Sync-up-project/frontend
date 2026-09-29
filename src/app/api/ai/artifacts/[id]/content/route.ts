@@ -1,18 +1,11 @@
 import { NextResponse } from "next/server";
-
-function getBackendBase() {
-  return (
-    process.env.INTERNAL_BACKEND_URL ??
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    "http://backend:3000"
-  );
-}
+import { getInternalBackendUrl } from "@/lib/backendUrl";
 
 export async function PATCH(
   req: Request,
   { params }: { params: { id: string } }
 ) {
-  const backend = getBackendBase();
+  const backend = getInternalBackendUrl();
   const authorization = req.headers.get("authorization") ?? "";
   const body = await req.text();
 

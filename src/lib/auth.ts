@@ -1,5 +1,7 @@
 // src/lib/auth.ts
 
+import { getPublicBackendUrl } from "@/lib/backendUrl";
+
 export type LoginRequest = {
   email: string;
   password: string;
@@ -49,12 +51,7 @@ const SESSION_USER_KEY = "syncup_session_user";
 const ACTIVE_PROJECT_KEY = "syncup_active_project_id";
 
 export function getApiBaseUrl(): string {
-  const env =
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    process.env.NEXT_PUBLIC_API_URL ??
-    process.env.NEXT_PUBLIC_BACKEND_URL;
-  const base = env ?? "http://localhost:3001";
-  return base;
+  return getPublicBackendUrl();
 }
 
 function notifyAuthChanged(): void {

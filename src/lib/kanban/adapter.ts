@@ -1,4 +1,10 @@
-import { KanbanBoardData } from "./types";
+import { KanbanBoardData, KanbanColumnKey } from "./types";
+
+const COLUMN_KEYS: readonly string[] = ["todo", "doing", "done"];
+
+function isColumnKey(v: unknown): v is KanbanColumnKey {
+  return typeof v === "string" && COLUMN_KEYS.includes(v);
+}
 
 const defaultBoard = (projectId: string): KanbanBoardData => ({
   projectId,
@@ -21,11 +27,10 @@ export function toKanbanBoardData(
   if (Array.isArray(raw?.columns)) {
     const board = defaultBoard(projectId);
     for (const col of raw.columns) {
-      const key = col.key ?? col.id;
-      if (!["todo", "doing", "done"].includes(key)) continue;
+      const key: unknown = col.key ?? col.id;
+      if (!isColumnKey(key)) continue;
 
-      board.columns[key as "todo" | "doing" | "done"].title =
-        col.title ?? board.columns[key as any].title;
+      board.columns[key].title = col.title ?? board.columns[key].title;
 
       const cards = col.cards ?? [];
       for (const c of cards) {
@@ -35,7 +40,7 @@ export function toKanbanBoardData(
           title: c.title ?? c.name ?? "Untitled",
           description: c.description ?? "",
         };
-        board.columns[key as any].cardIds.push(id);
+        board.columns[key].cardIds.push(id);
       }
     }
     return board;

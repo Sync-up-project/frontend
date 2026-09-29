@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { io, Socket } from "socket.io-client";
 import { getAccessToken, getApiBaseUrl } from "@/lib/auth";
+import { getSocketConfig } from "@/lib/backendUrl";
 
 type ChatTab = "project" | "dm";
 
@@ -494,7 +495,9 @@ export default function ChatWidget() {
   function connectSocketIfNeeded() {
     if (socketRef.current) return socketRef.current;
 
-    const s = io(`${getApiBaseUrl()}/chat`, {
+    const socketConfig = getSocketConfig("/chat");
+    const s = io(socketConfig.url, {
+      path: socketConfig.path,
       transports: ["websocket"],
       withCredentials: true,
     });

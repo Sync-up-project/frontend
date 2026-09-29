@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { getInternalBackendUrl } from "@/lib/backendUrl";
 
-const BACKEND = process.env.INTERNAL_BACKEND_URL ?? "http://backend:3000"; // docker 내부통신용
+const BACKEND = getInternalBackendUrl();
 
 export async function GET(
   _req: Request,

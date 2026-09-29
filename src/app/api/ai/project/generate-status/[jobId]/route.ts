@@ -1,19 +1,11 @@
 import { NextResponse } from "next/server";
-
-function getBackendBase() {
-  // 도커 내부에선 backend:3000, 로컬에선 localhost:3001
-  return (
-    process.env.INTERNAL_BACKEND_URL ??
-    process.env.NEXT_PUBLIC_API_URL ??
-    "http://backend:3000"
-  );
-}
+import { getInternalBackendUrl } from "@/lib/backendUrl";
 
 export async function GET(
   _req: Request,
   context: { params: { jobId: string } }
 ) {
-  const backend = getBackendBase();
+  const backend = getInternalBackendUrl();
   const { jobId } = context.params;
 
   const res = await fetch(`${backend}/ai/project/generate-status/${jobId}`, {

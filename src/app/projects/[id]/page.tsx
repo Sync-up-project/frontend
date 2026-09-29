@@ -1586,7 +1586,21 @@ function EffectiveSettingsCard({ policy }: { policy: any }) {
   );
 }
 
-function MembersSummaryCard({ project }: { project?: Project }) {
+// TODO: 커밋 60cea6a 에서 멤버 목록 조회·추방 요청/승인 로직과 호출부 props 는 추가됐지만,
+// 이 카드의 UI 는 갱신되지 않았습니다. 아래 props 는 아직 화면에 쓰이지 않습니다.
+type MembersSummaryCardProps = {
+  project?: Project;
+  currentUserId?: string | null;
+  isOwner?: boolean;
+  membersData?: ProjectMemberListResponse | null;
+  loading?: boolean;
+  error?: string | null;
+  busyKey?: string | null;
+  onRequestRemoval?: (targetUserId: string) => Promise<void>;
+  onApproveRemoval?: (requestId: string) => Promise<void>;
+};
+
+function MembersSummaryCard({ project }: MembersSummaryCardProps) {
   return (
     <Card title="멤버">
       <div className="space-y-2 text-sm text-gray-600">

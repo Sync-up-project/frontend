@@ -1,12 +1,5 @@
 import { NextResponse } from "next/server";
-
-function getBackendBase() {
-  return (
-    process.env.INTERNAL_BACKEND_URL ??
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    "http://localhost:3001"
-  );
-}
+import { getInternalBackendUrl } from "@/lib/backendUrl";
 
 function joinUrl(base: string, path: string) {
   const b = base.endsWith("/") ? base.slice(0, -1) : base;
@@ -16,7 +9,7 @@ function joinUrl(base: string, path: string) {
 
 export async function GET(req: Request) {
   try {
-    const backend = getBackendBase();
+    const backend = getInternalBackendUrl();
     const url = new URL(req.url);
 
     const target = joinUrl(backend, `/projects/list${url.search}`);
@@ -43,7 +36,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const backend = getBackendBase();
+    const backend = getInternalBackendUrl();
     const target = joinUrl(backend, "/projects");
 
     const body = await req.text();

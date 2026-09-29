@@ -22,22 +22,6 @@ import type {
   UpdateProjectCalendarEventRequest,
 } from "@/lib/types/schedule";
 
-import type {
-  GetMyPageResponse,
-  PatchMyPageRequest,
-  PatchMyPageLangRequest,
-  PatchMyPageTechesRequest,
-  PatchMyPagePositionsRequest,
-  PatchMyPageProjectsRequest,
-  GetUsersMyPageResponse,
-  GetMyPageGithubStatsResponse,
-  GetMyPageProjectsSummaryResponse,
-  GetMyPageProjectsCreatedResponse,
-  GetMyPageProjectsAppliedResponse,
-  PatchUsersMyPageRequest,
-  PatchUsersMyPageResponse,
-} from "@/lib/types/mypage";
-
 /**
  * ------------------------------------------------------------
  * Base fetch helpers
@@ -478,64 +462,6 @@ export async function apiPostProjectMail(
   body: PostProjectMailRequest,
 ): Promise<any> {
   return apiFetch<any>(`/projects/${projectId}/mail`, { method: "POST", auth: true, body, allow404: true });
-}
-
-/**
- * ------------------------------------------------------------
- * MyPage APIs
- * ------------------------------------------------------------
- * (기존 내용 유지)
- */
-
-export async function apiGetMyPage(): Promise<GetMyPageResponse> {
-  return apiFetch<GetMyPageResponse>(`/mypage`, { auth: true });
-}
-
-export async function apiPatchMyPage(body: PatchMyPageRequest): Promise<any> {
-  return apiFetch<any>(`/mypage`, { method: "PATCH", auth: true, body });
-}
-
-export async function apiPatchMyPageLang(body: PatchMyPageLangRequest): Promise<any> {
-  return apiFetch<any>(`/mypage/lang`, { method: "PATCH", auth: true, body });
-}
-
-export async function apiPatchMyPageTeches(body: PatchMyPageTechesRequest): Promise<any> {
-  return apiFetch<any>(`/mypage/teches`, { method: "PATCH", auth: true, body });
-}
-
-export async function apiPatchMyPagePositions(body: PatchMyPagePositionsRequest): Promise<any> {
-  return apiFetch<any>(`/mypage/positions`, { method: "PATCH", auth: true, body });
-}
-
-export async function apiPatchMyPageProjects(body: PatchMyPageProjectsRequest): Promise<any> {
-  return apiFetch<any>(`/mypage/projects`, { method: "PATCH", auth: true, body });
-}
-
-export async function apiGetUsersMyPage(userId: string): Promise<GetUsersMyPageResponse> {
-  return apiFetch<GetUsersMyPageResponse>(`/users/${userId}/mypage`, { auth: true });
-}
-
-export async function apiPatchUsersMyPage(
-  userId: string,
-  body: PatchUsersMyPageRequest,
-): Promise<PatchUsersMyPageResponse> {
-  return apiFetch<PatchUsersMyPageResponse>(`/users/${userId}/mypage`, { method: "PATCH", auth: true, body });
-}
-
-export async function apiGetMyPageGithubStats(): Promise<GetMyPageGithubStatsResponse> {
-  return apiFetch<GetMyPageGithubStatsResponse>(`/mypage/github/stats`, { auth: true, allow404: true });
-}
-
-export async function apiGetMyPageProjectsSummary(): Promise<GetMyPageProjectsSummaryResponse> {
-  return apiFetch<GetMyPageProjectsSummaryResponse>(`/mypage/projects/summary`, { auth: true });
-}
-
-export async function apiGetMyPageProjectsCreated(): Promise<GetMyPageProjectsCreatedResponse> {
-  return apiFetch<GetMyPageProjectsCreatedResponse>(`/mypage/projects/created`, { auth: true });
-}
-
-export async function apiGetMyPageProjectsApplied(): Promise<GetMyPageProjectsAppliedResponse> {
-  return apiFetch<GetMyPageProjectsAppliedResponse>(`/mypage/projects/applied`, { auth: true });
 }
 
 /**

@@ -1,19 +1,12 @@
 import { NextResponse } from "next/server";
-
-function getBackendBase() {
-  return (
-    process.env.INTERNAL_BACKEND_URL ??
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    "http://backend:3000"
-  );
-}
+import { getInternalBackendUrl } from "@/lib/backendUrl";
 
 export async function POST(
   req: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const backend = getBackendBase();
+    const backend = getInternalBackendUrl();
     const authorization =
       req.headers.get("authorization") ?? req.headers.get("Authorization") ?? "";
     const cookie = req.headers.get("cookie") ?? "";
@@ -38,7 +31,7 @@ export async function POST(
     });
   } catch (e) {
     return NextResponse.json(
-      { error: "Proxy failed", detail: String(e), backendBase: getBackendBase() },
+      { error: "Proxy failed", detail: String(e), backendBase: getInternalBackendUrl() },
       { status: 500 }
     );
   }

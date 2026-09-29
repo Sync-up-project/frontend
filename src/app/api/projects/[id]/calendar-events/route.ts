@@ -1,19 +1,12 @@
 import { NextResponse } from "next/server";
-
-function getBackendBase() {
-  return (
-    process.env.INTERNAL_BACKEND_URL ??
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    "http://backend:3000"
-  );
-}
+import { getInternalBackendUrl } from "@/lib/backendUrl";
 
 export async function GET(
   req: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const backend = getBackendBase();
+    const backend = getInternalBackendUrl();
     const u = new URL(req.url);
     const qs = u.search ? u.search : "";
     const url = `${backend}/projects/${params.id}/calendar-events${qs}`;
@@ -40,7 +33,7 @@ export async function GET(
       {
         error: "Proxy failed",
         detail: String(e),
-        backendBase: getBackendBase(),
+        backendBase: getInternalBackendUrl(),
       },
       { status: 500 }
     );
@@ -52,7 +45,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const backend = getBackendBase();
+    const backend = getInternalBackendUrl();
     const url = `${backend}/projects/${params.id}/calendar-events`;
 
     const cookie = req.headers.get("cookie") ?? "";
@@ -81,7 +74,7 @@ export async function POST(
       {
         error: "Proxy failed",
         detail: String(e),
-        backendBase: getBackendBase(),
+        backendBase: getInternalBackendUrl(),
       },
       { status: 500 }
     );
