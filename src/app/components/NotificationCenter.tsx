@@ -36,7 +36,10 @@ function getTypeLabel(type: string) {
   const normalized = type.toUpperCase();
   if (normalized === "INVITE") return "초대";
   if (normalized === "APPLICATION") return "신청";
-  if (normalized === "INVITE_STATUS") return "초대 상태";
+  if (normalized === "INVITE_STATUS") return "초대 결과";
+  if (normalized === "APPLICATION_STATUS") return "신청 결과";
+  if (normalized === "MEMBER_REMOVAL_REQUEST") return "퇴장 요청";
+  if (normalized === "MEMBER_REMOVED") return "퇴장";
   if (normalized === "PROJECT_UPDATE") return "프로젝트";
   return "알림";
 }
