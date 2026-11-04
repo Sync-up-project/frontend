@@ -187,7 +187,26 @@ export async function fetchCurrentUser(): Promise<SessionUser> {
   return normalized;
 }
 
-export async function refreshAccessToken(): Promise<{ accessToken: string; expiresIn?: number }> {
+type RefreshResult = { accessToken: string; expiresIn?: number };
+
+// 진행 중인 refresh 요청 (동시 호출 시 하나로 묶기 위함)
+let refreshInFlight: Promise<RefreshResult> | null = null;
+
+/**
+ * 액세스 토큰 갱신
+ * - 서버가 갱신할 때마다 리프레시 토큰을 새로 발급(회전)하므로,
+ *   여러 API가 동시에 401을 받아도 /auth/refresh는 한 번만 호출하고 결과를 공유합니다.
+ */
+export function refreshAccessToken(): Promise<RefreshResult> {
+  if (!refreshInFlight) {
+    refreshInFlight = requestRefresh().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
+}
+
+async function requestRefresh(): Promise<RefreshResult> {
   const url = `${getApiBaseUrl()}/auth/refresh`;
 
   const data = await fetchJson<any>(url, {
