@@ -381,6 +381,8 @@ export default function ChatWidget() {
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   const typingTimerRef = useRef<any>(null);
   const myIdRef = useRef<string | null>(null);
+  // 마지막으로 입장에 성공한 프로젝트. 재연결 시 같은 방으로 다시 join 하는 데 사용
+  const joinedProjectIdRef = useRef<string | null>(null);
   const loadingOlderRef = useRef(false);
   const scrollRestoreRef = useRef<{ prevHeight: number; prevTop: number } | null>(null);
   const loadOlderDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -504,7 +506,33 @@ export default function ChatWidget() {
 
     socketRef.current = s;
 
-    s.on("disconnect", () => {
+    // 배포(서버 교체) 등으로 연결이 끊겼다가 다시 붙으면, 서버는 방 입장 정보를 메모리에만 들고 있어
+    // 새 서버에서는 이 사용자가 방에 없는 상태가 됩니다. 두 번째 연결부터는 자동으로 다시 join 합니다.
+    let connectedBefore = false;
+    s.on("connect", () => {
+      if (!connectedBefore) {
+        connectedBefore = true;
+        return; // 첫 연결은 joinProjectRoom 이 처리
+      }
+      const projectId = joinedProjectIdRef.current;
+      const userId = myIdRef.current;
+      if (!projectId || !userId) return;
+
+      setJoinStatus("joining");
+      s.emit("join", { userId, projectId }, (ack: any) => {
+        if (ack?.status === "joined") {
+          setJoinStatus("joined");
+          setJoinError(null);
+        } else {
+          setJoinStatus("error");
+          setJoinError(String(ack?.message ?? "채팅방 재입장에 실패했습니다."));
+        }
+      });
+    });
+
+    s.on("disconnect", (reason) => {
+      // 서버가 명시적으로 끊은 경우에는 socket.io 가 자동 재연결하지 않으므로 직접 다시 연결
+      if (reason === "io server disconnect") s.connect();
       setJoinStatus("idle");
       setUserCount(0);
       setTypingUsers({});
@@ -650,6 +678,7 @@ export default function ChatWidget() {
 
     s.emit("join", { userId: myId, projectId: targetProjectId }, (ack: any) => {
       if (ack?.status === "joined") {
+        joinedProjectIdRef.current = targetProjectId;
         setJoinStatus("joined");
         setJoinError(null);
         if (ack?.username) setMyNickname(String(ack.username));
@@ -664,6 +693,7 @@ export default function ChatWidget() {
   }
 
   function leaveAndClose() {
+    joinedProjectIdRef.current = null;
     setOpen(false);
     setJoinStatus("idle");
     setJoinError(null);
