@@ -60,22 +60,76 @@ export default function NotificationCenter() {
     return String(unreadCount);
   }, [unreadCount]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await apiGetNotifications(20);
-      setItems(Array.isArray(res?.items) ? res.items : []);
-      setUnreadCount(Number(res?.unreadCount ?? 0));
-    } catch (e: any) {
-      setError(e?.message ?? tr("알림을 불러오지 못했습니다.", "通知を読み込めませんでした。"));
-    } finally {
-      setLoading(false);
-    }
-  }, [tr]);
+  // 이전 요청이 끝나기 전에 다음 갱신이 겹치지 않도록 표시
+  const loadingRef = useRef(false);
+
+  /**
+   * 알림 목록 불러오기
+   * - silent: 자동 갱신일 때는 로딩 표시·에러 문구를 띄우지 않음 (화면 깜빡임 방지)
+   */
+  const load = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (loadingRef.current) return;
+      loadingRef.current = true;
+      const silent = options?.silent ?? false;
+
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
+      try {
+        const res = await apiGetNotifications(20);
+        setItems(Array.isArray(res?.items) ? res.items : []);
+        setUnreadCount(Number(res?.unreadCount ?? 0));
+        if (silent) setError(null);
+      } catch (e: any) {
+        if (!silent) {
+          setError(e?.message ?? tr("알림을 불러오지 못했습니다.", "通知を読み込めませんでした。"));
+        }
+      } finally {
+        loadingRef.current = false;
+        if (!silent) setLoading(false);
+      }
+    },
+    [tr],
+  );
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  // ✅ 알림 자동 갱신
+  // - 30초마다 다시 불러와 새 알림이 새로고침 없이 보이도록 함
+  // - 다른 탭에 있다가 돌아오면 바로 한 번 불러옴
+  // - 탭이 숨겨져 있는 동안에는 요청하지 않음 (불필요한 서버 요청 방지)
+  useEffect(() => {
+    const POLL_INTERVAL_MS = 30_000;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const start = () => {
+      if (timer) return;
+      timer = setInterval(() => load({ silent: true }), POLL_INTERVAL_MS);
+    };
+    const stop = () => {
+      if (!timer) return;
+      clearInterval(timer);
+      timer = null;
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        load({ silent: true });
+        start();
+      } else {
+        stop();
+      }
+    };
+
+    if (document.visibilityState === "visible") start();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [load]);
 
   useEffect(() => {
