@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
-import { login, getAccessToken, fetchCurrentUser, saveAccessToken, getApiBaseUrl } from "@/lib/auth";
+import { login, getAccessToken, fetchCurrentUser, refreshAccessToken, getApiBaseUrl } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 
 function isValidEmail(email: string): boolean {
@@ -40,7 +40,6 @@ function LoginPageContent() {
 
   const next = searchParams.get("next") || "/projects";
   const oauth = searchParams.get("oauth"); // success | failed | null
-  const oauthAccessToken = searchParams.get("accessToken");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -77,11 +76,12 @@ function LoginPageContent() {
         setOauthChecking(true);
         setError("");
         try {
-          if (oauthAccessToken) {
-            saveAccessToken(oauthAccessToken);
-          }
+          // ✅ 액세스 토큰을 주소(URL)로 받지 않습니다.
+          // GitHub 콜백에서 서버가 심어준 리프레시 토큰 쿠키(httpOnly)로
+          // /auth/refresh 를 호출해 액세스 토큰을 받아 저장한 뒤, /auth/me로 세션을 확정합니다.
+          await refreshAccessToken();
+          if (!mounted) return;
 
-          // OAuth 콜백은 accessToken을 query로 넘기고, 여기서 /auth/me로 세션을 확정합니다.
           const me = await fetchCurrentUser();
           if (!mounted) return;
 
@@ -116,7 +116,7 @@ function LoginPageContent() {
     return () => {
       mounted = false;
     };
-  }, [oauth, oauthAccessToken, next, router, tr]);
+  }, [oauth, next, router, tr]);
 
   const canSubmit = useMemo(() => {
     if (!isValidEmail(email.trim())) return false;
